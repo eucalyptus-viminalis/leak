@@ -20,7 +20,9 @@ if (!BUYER_PRIVATE_KEY) {
 }
 
 const account = privateKeyToAccount(
-  BUYER_PRIVATE_KEY.startsWith("0x") ? BUYER_PRIVATE_KEY : `0x${BUYER_PRIVATE_KEY}`,
+  BUYER_PRIVATE_KEY.startsWith("0x")
+    ? BUYER_PRIVATE_KEY
+    : `0x${BUYER_PRIVATE_KEY}`,
 );
 
 const client = new x402Client();
@@ -42,8 +44,12 @@ async function main() {
     throw new Error(`Expected 402, got ${r1.status}: ${text}`);
   }
 
-  const paymentRequiredHeader = getHeaderCaseInsensitive(r1.headers, "PAYMENT-REQUIRED");
-  if (!paymentRequiredHeader) throw new Error("Missing PAYMENT-REQUIRED header");
+  const paymentRequiredHeader = getHeaderCaseInsensitive(
+    r1.headers,
+    "PAYMENT-REQUIRED",
+  );
+  if (!paymentRequiredHeader)
+    throw new Error("Missing PAYMENT-REQUIRED header");
 
   const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader);
   const payload = await client.createPaymentPayload(paymentRequired);
@@ -64,15 +70,21 @@ async function main() {
 
   const data = await r2.json();
   const token = data?.token;
-  if (!token) throw new Error(`Missing token in response: ${JSON.stringify(data)}`);
+  if (!token)
+    throw new Error(`Missing token in response: ${JSON.stringify(data)}`);
 
   // If OUTPUT_PATH isn't explicitly set, prefer the server-provided filename.
-  const outPath = process.env.OUTPUT_PATH || (data?.filename ? `./${data.filename}` : OUTPUT_PATH);
+  const outPath =
+    process.env.OUTPUT_PATH ||
+    (data?.filename ? `./${data.filename}` : OUTPUT_PATH);
 
   // 3) Final request: download artifact with token.
-  const r3 = await fetch(`${BASE_URL}/download?token=${encodeURIComponent(token)}`, {
-    method: "GET",
-  });
+  const r3 = await fetch(
+    `${BASE_URL}/download?token=${encodeURIComponent(token)}`,
+    {
+      method: "GET",
+    },
+  );
 
   if (!r3.ok) {
     const text = await r3.text().catch(() => "");
