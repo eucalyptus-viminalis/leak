@@ -1,6 +1,6 @@
-# paywall-node
+# leak
 
-Node (Express) implementation of an **x402 paywalled download**.
+Node (Express) implementation of an **x402 paywalled download** ("leak").
 
 This mirrors the behavior of the Python scaffold in `~/paywall/paywall/server.py`:
 
@@ -15,7 +15,7 @@ This mirrors the behavior of the Python scaffold in `~/paywall/paywall/server.py
 ### 1) Install
 
 ```bash
-cd ~/paywall-node
+cd ~/leak
 npm install
 ```
 
@@ -89,7 +89,7 @@ If valid, the server responds `200` JSON:
 There’s a Node buyer test script that does the whole 3-step flow (402 → pay → token → download).
 
 ```bash
-cd ~/paywall-node
+cd ~/leak
 
 # buyer envs
 export BASE_URL=http://127.0.0.1:4021

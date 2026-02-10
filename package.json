@@ -1,7 +1,7 @@
 {
-  "name": "paywall-node",
+  "name": "leak",
   "version": "1.0.0",
-  "description": "x402 paywalled download server (Express)",
+  "description": "leak: x402 paywalled download server (Express)",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
