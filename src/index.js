@@ -120,6 +120,10 @@ app.get("/health", (req, res) => {
 
 // x402 gate for GET /download (supports PAYMENT-SIGNATURE and legacy X-PAYMENT by aliasing)
 app.use("/download", async (req, res, next) => {
+  // NOTE: because this middleware is mounted at "/download", Express strips the mount
+  // path and `req.path` becomes "/". x402 route matching needs the *full* path.
+  const fullPath = `${req.baseUrl || ""}${req.path || ""}`;
+
   const adapter = {
     getHeader(name) {
       const v = req.get(name);
@@ -134,7 +138,7 @@ app.use("/download", async (req, res, next) => {
       return req.method;
     },
     getPath() {
-      return req.path;
+      return fullPath;
     },
     getUrl() {
       return `${req.protocol}://${req.get("host")}${req.originalUrl}`;
@@ -153,7 +157,7 @@ app.use("/download", async (req, res, next) => {
 
   const result = await httpServer.processHTTPRequest({
     adapter,
-    path: req.path,
+    path: fullPath,
     method: req.method,
   });
 
