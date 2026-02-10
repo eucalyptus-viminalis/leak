@@ -7,7 +7,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { spawn } from "node:child_process";
 
 function usageAndExit(code = 1) {
-  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed]`);
+  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]`);
   console.log(`Examples:`);
   console.log(`  npm run leak -- --file ./vape.jpg`);
   console.log(`  npm run leak -- --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
@@ -21,6 +21,10 @@ function parseArgs(argv) {
     if (a === "--help" || a === "-h") usageAndExit(0);
     if (a === "--confirmed") {
       args.confirmed = true;
+      continue;
+    }
+    if (a === "--public") {
+      args.public = true;
       continue;
     }
     if (!a.startsWith("--")) continue;
@@ -143,13 +147,59 @@ async function main() {
     stdio: "inherit",
   });
 
-  const stopTimer = setTimeout(() => {
-    console.log(`\n[leak] window expired (${prompted.windowSeconds}s). stopping server...`);
-    child.kill("SIGTERM");
-  }, prompted.windowSeconds * 1000);
+  let tunnelProc = null;
+  if (args.public) {
+    // Cloudflare "quick tunnel" (temporary URL)
+    // Requires `cloudflared` installed.
+    console.log("\n[leak] starting Cloudflare quick tunnel...");
+
+    tunnelProc = spawn(
+      "cloudflared",
+      ["tunnel", "--url", `http://localhost:${port}`, "--no-autoupdate"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    const urlRegex = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi;
+    const onData = (chunk) => {
+      const s = chunk.toString("utf8");
+      const m = s.match(urlRegex);
+      if (m && m[0]) {
+        console.log(`\n[leak] public URL: ${m[0]}`);
+        console.log(`[leak] share link: ${m[0]}/download`);
+        // only print once
+        tunnelProc?.stdout?.off("data", onData);
+        tunnelProc?.stderr?.off("data", onData);
+      }
+    };
+
+    tunnelProc.stdout.on("data", onData);
+    tunnelProc.stderr.on("data", onData);
+
+    tunnelProc.on("exit", (code, signal) => {
+      if (signal) console.log(`[leak] tunnel exited (signal ${signal})`);
+      else console.log(`[leak] tunnel exited (code ${code})`);
+    });
+  }
+
+  const stopAll = () => {
+    console.log(`\n[leak] window expired (${prompted.windowSeconds}s). stopping...`);
+    try {
+      child.kill("SIGTERM");
+    } catch {}
+    try {
+      tunnelProc?.kill("SIGTERM");
+    } catch {}
+  };
+
+  const stopTimer = setTimeout(stopAll, prompted.windowSeconds * 1000);
 
   child.on("exit", (code, signal) => {
     clearTimeout(stopTimer);
+    try {
+      tunnelProc?.kill("SIGTERM");
+    } catch {}
     if (signal) {
       console.log(`[leak] server exited (signal ${signal})`);
     } else {

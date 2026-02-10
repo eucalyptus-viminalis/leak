@@ -19,6 +19,7 @@ Optional flags:
 - `--price 0.01` (USDC)
 - `--window 1h` (or seconds)
 - `--confirmed` (settle on-chain before issuing token)
+- `--public` (start a temporary Cloudflare Tunnel and print a public URL)
 - `--network eip155:84532`
 - `--pay-to 0x...`
 - `--port 4021`
