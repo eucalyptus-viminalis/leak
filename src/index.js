@@ -221,11 +221,15 @@ app.get("/download", async (req, res) => {
   }
 
   const t = mintGrant();
+  const p = absArtifactPath();
+
   return res.json({
     ok: true,
     token: t,
     expires_in: WINDOW_SECONDS,
     download_url: `/download?token=${t}`,
+    filename: path.basename(p),
+    mime_type: MIME_TYPE,
   });
 });
 

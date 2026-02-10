@@ -66,6 +66,9 @@ async function main() {
   const token = data?.token;
   if (!token) throw new Error(`Missing token in response: ${JSON.stringify(data)}`);
 
+  // If OUTPUT_PATH isn't explicitly set, prefer the server-provided filename.
+  const outPath = process.env.OUTPUT_PATH || (data?.filename ? `./${data.filename}` : OUTPUT_PATH);
+
   // 3) Final request: download artifact with token.
   const r3 = await fetch(`${BASE_URL}/download?token=${encodeURIComponent(token)}`, {
     method: "GET",
@@ -77,9 +80,9 @@ async function main() {
   }
 
   const buf = Buffer.from(await r3.arrayBuffer());
-  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  fs.writeFileSync(OUTPUT_PATH, buf);
-  console.log(`Downloaded ${buf.length} bytes to ${OUTPUT_PATH}`);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, buf);
+  console.log(`Downloaded ${buf.length} bytes to ${outPath}`);
 }
 
 main().catch((e) => {
