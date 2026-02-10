@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "buyer": "node scripts/buyer_test.js"
+    "buyer": "node scripts/buyer_test.js",
+    "leak": "node scripts/leak.js"
   },
   "keywords": [
     "x402",

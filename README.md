@@ -2,6 +2,27 @@
 
 Node (Express) implementation of an **x402 paywalled download** ("leak").
 
+## Leak CLI (recommended)
+
+The easiest way to run the server is the `leak` CLI, which will prompt you for missing info (price + duration) and auto-stop the server when the window expires.
+
+```bash
+cd ~/leak
+npm run leak -- --file /path/to/vape.jpg
+```
+
+It will ask:
+- **How much (USDC)?** (e.g. `0.01`)
+- **How long?** (e.g. `15m`, `1h`)
+
+Optional flags:
+- `--price 0.01` (USDC)
+- `--window 1h` (or seconds)
+- `--confirmed` (settle on-chain before issuing token)
+- `--network eip155:84532`
+- `--pay-to 0x...`
+- `--port 4021`
+
 This mirrors the behavior of the Python scaffold in `~/paywall/paywall/server.py`:
 
 - `GET /download` without payment → **402** with `PAYMENT-REQUIRED` header
