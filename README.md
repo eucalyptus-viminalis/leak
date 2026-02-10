@@ -113,14 +113,20 @@ There’s a Node buyer test script that does the whole 3-step flow (402 → pay 
 ```bash
 cd ~/leak
 
-# buyer envs
-export BASE_URL=http://127.0.0.1:4021
+# buyer envs (REQUIRED)
+export BASE_URL=https://xxxx.trycloudflare.com   # or http://127.0.0.1:4021 in dev
 export BUYER_PRIVATE_KEY=0x...
 
-# optional (defaults to server-provided filename)
+# optional
 export OUTPUT_PATH=./downloaded.bin
+export OUTPUT_BASENAME=myfilename
 
 npm run buyer
+```
+
+Dev convenience (optional):
+```bash
+export LEAK_DEV=1   # allows BASE_URL to default to http://127.0.0.1:4021
 ```
 
 What it does:

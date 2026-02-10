@@ -10,10 +10,16 @@ import {
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
 
-const BASE_URL = process.env.BASE_URL || "http://127.0.0.1:4021";
+const DEV_DEFAULT_BASE_URL = process.env.DEV_DEFAULT_BASE_URL || "http://127.0.0.1:4021";
+const BASE_URL = process.env.BASE_URL || (process.env.LEAK_DEV === "1" ? DEV_DEFAULT_BASE_URL : null);
 const BUYER_PRIVATE_KEY = process.env.BUYER_PRIVATE_KEY;
 const OUTPUT_PATH = process.env.OUTPUT_PATH || "downloaded.bin";
 const OUTPUT_BASENAME = process.env.OUTPUT_BASENAME; // optional, without extension
+
+if (!BASE_URL) {
+  console.error("Missing BASE_URL env var (set LEAK_DEV=1 to allow local default for development)");
+  process.exit(1);
+}
 
 if (!BUYER_PRIVATE_KEY) {
   console.error("Missing BUYER_PRIVATE_KEY env var");
