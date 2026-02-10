@@ -74,24 +74,38 @@ A buyer/agent should retry with a payment header:
 
 If valid, the server responds `200` JSON:
 ```json
-{ "ok": true, "token": "...", "expires_in": 3600, "download_url": "/download?token=..." }
+{
+  "ok": true,
+  "token": "...",
+  "expires_in": 3600,
+  "download_url": "/download?token=...",
+  "filename": "myfile.mp3",
+  "mime_type": "audio/mpeg"
+}
 ```
 
 #### Node buyer test script
 
-There’s a Node buyer test script that does the whole 3-step flow:
+There’s a Node buyer test script that does the whole 3-step flow (402 → pay → token → download).
 
 ```bash
 cd ~/paywall-node
-cp .env.example .env   # seller envs (not strictly required for buyer)
 
 # buyer envs
 export BASE_URL=http://127.0.0.1:4021
 export BUYER_PRIVATE_KEY=0x...
+
+# optional (defaults to server-provided filename)
 export OUTPUT_PATH=./downloaded.bin
 
 npm run buyer
 ```
+
+What it does:
+- first `GET /download` expects **402** + `PAYMENT-REQUIRED`
+- creates a payment payload, retries with `PAYMENT-SIGNATURE`
+- receives `{ token, download_url, filename, mime_type }`
+- downloads via `?token=` and saves to disk
 
 ### C) Use token → download
 
@@ -119,7 +133,9 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
   - default: `eip155:84532` (Base Sepolia) for `x402.org/facilitator`
   - for Base mainnet: `eip155:8453` (requires a mainnet-capable facilitator)
 - `WINDOW_SECONDS` access token lifetime
-- `CONFIRMATION_POLICY` = `optimistic` or `confirmed`
+- `CONFIRMATION_POLICY`
+  - `optimistic` (default): verifies payment + issues token, but may not settle on-chain
+  - `confirmed`: settles via facilitator before issuing token (you should be able to see a tx on Basescan)
 - `CONFIRMATIONS_REQUIRED` (currently informational; parity with Python scaffold)
 - `ARTIFACT_PATH` local file path
 - `PROTECTED_MIME` content type (default `application/octet-stream`)
