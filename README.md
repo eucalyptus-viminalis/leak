@@ -11,6 +11,12 @@ cd ~/leak
 npm run leak -- --file /path/to/vape.jpg
 ```
 
+If you install this package globally / as a dependency, you can also run:
+
+```bash
+leak leak --file /path/to/vape.jpg
+```
+
 It will ask:
 - **How much (USDC)?** (e.g. `0.01`)
 - **How long?** (e.g. `15m`, `1h`)
@@ -109,6 +115,18 @@ If valid, the server responds `200` JSON:
 #### Node buyer test script
 
 There’s a Node buyer test script that does the whole 3-step flow (402 → pay → token → download).
+
+## Buyer CLI (new)
+
+There is now a proper buyer CLI that takes the link directly (no `BASE_URL` env):
+
+```bash
+leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x...
+```
+
+Optional save naming:
+- `--out ./some/path.ext`
+- `--basename myname` (keeps the server file extension)
 
 ```bash
 cd ~/leak

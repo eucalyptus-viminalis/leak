@@ -4,11 +4,15 @@
   "description": "leak: x402 paywalled download server (Express)",
   "type": "module",
   "main": "src/index.js",
+  "bin": {
+    "leak": "./scripts/cli.js"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "buyer": "node scripts/buyer_test.js",
-    "leak": "node scripts/leak.js"
+    "leak": "node scripts/leak.js",
+    "buy": "node scripts/buy.js"
   },
   "keywords": [
     "x402",
