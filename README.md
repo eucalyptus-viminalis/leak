@@ -77,6 +77,22 @@ If valid, the server responds `200` JSON:
 { "ok": true, "token": "...", "expires_in": 3600, "download_url": "/download?token=..." }
 ```
 
+#### Node buyer test script
+
+There’s a Node buyer test script that does the whole 3-step flow:
+
+```bash
+cd ~/paywall-node
+cp .env.example .env   # seller envs (not strictly required for buyer)
+
+# buyer envs
+export BASE_URL=http://127.0.0.1:4021
+export BUYER_PRIVATE_KEY=0x...
+export OUTPUT_PATH=./downloaded.bin
+
+npm run buyer
+```
+
 ### C) Use token → download
 
 ```bash
