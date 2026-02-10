@@ -13,6 +13,7 @@ import { privateKeyToAccount } from "viem/accounts";
 const BASE_URL = process.env.BASE_URL || "http://127.0.0.1:4021";
 const BUYER_PRIVATE_KEY = process.env.BUYER_PRIVATE_KEY;
 const OUTPUT_PATH = process.env.OUTPUT_PATH || "downloaded.bin";
+const OUTPUT_BASENAME = process.env.OUTPUT_BASENAME; // optional, without extension
 
 if (!BUYER_PRIVATE_KEY) {
   console.error("Missing BUYER_PRIVATE_KEY env var");
@@ -73,10 +74,25 @@ async function main() {
   if (!token)
     throw new Error(`Missing token in response: ${JSON.stringify(data)}`);
 
-  // If OUTPUT_PATH isn't explicitly set, prefer the server-provided filename.
-  const outPath =
-    process.env.OUTPUT_PATH ||
-    (data?.filename ? `./${data.filename}` : OUTPUT_PATH);
+  // Choose output path.
+  // Priority:
+  // 1) OUTPUT_PATH (full path)
+  // 2) OUTPUT_BASENAME (basename without extension) + server extension
+  // 3) server-provided filename
+  // 4) fallback OUTPUT_PATH default
+  let outPath;
+
+  if (process.env.OUTPUT_PATH) {
+    outPath = process.env.OUTPUT_PATH;
+  } else if (OUTPUT_BASENAME) {
+    const serverName = data?.filename || "downloaded.bin";
+    const ext = path.extname(serverName) || "";
+    outPath = `./${OUTPUT_BASENAME}${ext}`;
+  } else if (data?.filename) {
+    outPath = `./${data.filename}`;
+  } else {
+    outPath = OUTPUT_PATH;
+  }
 
   // 3) Final request: download artifact with token.
   const r3 = await fetch(
