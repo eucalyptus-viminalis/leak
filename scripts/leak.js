@@ -39,9 +39,18 @@ function parseArgs(argv) {
 function parseDurationToSeconds(s) {
   if (!s) return null;
   const str = String(s).trim().toLowerCase();
-  if (/^\d+$/.test(str)) return Number(str);
-  const m = str.match(/^(\d+(?:\.\d+)?)(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/);
+
+  // Allow: "1 hour", "60 minutes", etc.
+  const spaced = str.replace(/\s+/g, "");
+
+  // Raw seconds: "3600"
+  if (/^\d+$/.test(spaced)) return Number(spaced);
+
+  const m = spaced.match(
+    /^(\d+(?:\.\d+)?)(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/,
+  );
   if (!m) return null;
+
   const n = Number(m[1]);
   const unit = m[2];
   if (["s", "sec", "secs", "second", "seconds"].includes(unit)) return Math.round(n);
@@ -61,8 +70,10 @@ async function promptMissing({ price, windowSeconds }) {
   try {
     let p = price;
     if (!p) {
-      p = (await rl.question("How much (USDC)? e.g. 0.01: ")).trim();
+      p = (await rl.question("How much (USDC)? e.g. 0.01 or $0.01: ")).trim();
     }
+    p = String(p).trim();
+    if (p.startsWith("$")) p = p.slice(1).trim();
     if (!p || Number.isNaN(Number(p))) throw new Error("Invalid price");
 
     let w = windowSeconds;
