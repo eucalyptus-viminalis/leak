@@ -102,7 +102,7 @@ await httpServer.initialize();
 
 app.get("/", (req, res) => {
   res.json({
-    name: "paywall-node",
+    name: "leak",
     artifact: path.basename(absArtifactPath()),
     price_usd: PRICE_USD,
     network: CHAIN_ID,
