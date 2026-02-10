@@ -8,16 +8,82 @@ This mirrors the behavior of the Python scaffold in `~/paywall/paywall/server.py
 - `GET /download` with valid payment headers → returns a **time-limited token** JSON
 - `GET /download?token=...` → streams the artifact
 
-## Setup
+---
+
+## Quickstart (local)
+
+### 1) Install
 
 ```bash
 cd ~/paywall-node
-cp .env.example .env
-# edit .env (SELLER_PAY_TO, ARTIFACT_PATH, etc)
-
 npm install
+```
+
+### 2) Configure
+
+```bash
+cp .env.example .env
+# edit .env
+```
+
+Minimum you must set:
+- `SELLER_PAY_TO` (the address that receives USDC)
+- `ARTIFACT_PATH` (the file you want to serve)
+
+Example artifact:
+```bash
+mkdir -p protected
+printf "hello" > protected/asset.bin
+# then set ARTIFACT_PATH=./protected/asset.bin
+```
+
+### 3) Run
+
+Dev (auto-reload):
+```bash
 npm run dev
 ```
+
+Prod:
+```bash
+npm start
+```
+
+Server will print:
+- `http://localhost:4021/` (info)
+- `http://localhost:4021/health`
+- `http://localhost:4021/download`
+
+---
+
+## How the flow works
+
+### A) Unpaid request
+
+```bash
+curl -i http://localhost:4021/download
+```
+
+You should get `402` and a `PAYMENT-REQUIRED` header.
+
+### B) Paid request → token
+
+A buyer/agent should retry with a payment header:
+- v2: `PAYMENT-SIGNATURE: <base64-json>`
+- legacy: `X-PAYMENT: <base64-json>` (accepted by this server)
+
+If valid, the server responds `200` JSON:
+```json
+{ "ok": true, "token": "...", "expires_in": 3600, "download_url": "/download?token=..." }
+```
+
+### C) Use token → download
+
+```bash
+curl -L -o out.bin "http://localhost:4021/download?token=..."
+```
+
+---
 
 ## Routes
 
@@ -25,16 +91,31 @@ npm run dev
 - `GET /health` (free)
 - `GET /download` (x402-protected)
 
+---
+
 ## Env vars
 
-- `FACILITATOR_URL` (default: https://x402.org/facilitator)
+- `PORT` (default `4021`)
+- `FACILITATOR_URL` (default: `https://x402.org/facilitator`)
 - `SELLER_PAY_TO` receiving address
 - `PRICE_USD` (string like `1.00`)
-- `CHAIN_ID` (default: `eip155:84532` Base Sepolia for `x402.org/facilitator`; use `eip155:8453` for Base mainnet with a mainnet-capable facilitator)
+- `CHAIN_ID`
+  - default: `eip155:84532` (Base Sepolia) for `x402.org/facilitator`
+  - for Base mainnet: `eip155:8453` (requires a mainnet-capable facilitator)
 - `WINDOW_SECONDS` access token lifetime
 - `CONFIRMATION_POLICY` = `optimistic` or `confirmed`
+- `CONFIRMATIONS_REQUIRED` (currently informational; parity with Python scaffold)
 - `ARTIFACT_PATH` local file path
+- `PROTECTED_MIME` content type (default `application/octet-stream`)
 
-## Legacy header
+---
 
-This server will also accept legacy `X-PAYMENT` by aliasing it to `PAYMENT-SIGNATURE`.
+## Notes
+
+### Legacy header support
+
+This server accepts legacy `X-PAYMENT` by aliasing it to `PAYMENT-SIGNATURE`.
+
+### Running under OpenClaw / timeouts
+
+If you see a `SIGKILL` after “listening …”, it usually means the command was run with a short timeout during automated testing. Running via `npm run dev` in your own terminal will keep it alive.
