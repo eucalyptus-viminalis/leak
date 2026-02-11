@@ -1,7 +1,7 @@
 {
   "name": "leak-cli",
   "version": "2026.2.11",
-  "description": "leak: x402 download server (Express)",
+  "description": "On-demand, self-hosted internet pop-up store builder optimized for AI agents",
   "type": "module",
   "main": "src/index.js",
   "files": [
