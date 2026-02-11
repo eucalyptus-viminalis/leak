@@ -10,6 +10,19 @@ if command -v leak >/dev/null 2>&1; then
   exit 0
 fi
 
+echo "[leak-skill] trying npm global install first: leak-cli"
+if npm install -g leak-cli; then
+  hash -r || true
+  if command -v leak >/dev/null 2>&1; then
+    echo "[leak-skill] installed via npm: $(command -v leak)"
+    leak --help >/dev/null 2>&1 || true
+    exit 0
+  fi
+  echo "[leak-skill] npm install succeeded but 'leak' is not on PATH yet; continuing with fallback."
+else
+  echo "[leak-skill] npm global install failed; falling back to repo clone + npm link."
+fi
+
 if [ ! -d "$INSTALL_DIR" ]; then
   echo "[leak-skill] cloning into $INSTALL_DIR"
   git clone "$REPO_SSH" "$INSTALL_DIR"

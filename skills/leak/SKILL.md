@@ -12,7 +12,13 @@ This skill operates the `leak` project:
 
 ## Install / ensure CLI exists (first step)
 
-Prefer the `leak` CLI on PATH. If missing, install it from the GitHub repo via `npm link`.
+Prefer the `leak` CLI on PATH. If missing, install it globally from npm first:
+
+```bash
+npm i -g leak-cli
+```
+
+If that fails or you need a dev checkout, use the GitHub clone + `npm link` fallback:
 
 Run:
 
@@ -21,8 +27,8 @@ bash skills/leak/scripts/ensure_leak.sh
 ```
 
 Notes:
-- Installs into `~/leak` (clones if missing).
-- Runs `npm install` and `npm link` so `leak ...` works globally.
+- Tries `npm i -g leak-cli` first.
+- Fallback installs into `~/leak` (clones if missing), then runs `npm install` and `npm link`.
 
 ## Publish an x402 download (server)
 

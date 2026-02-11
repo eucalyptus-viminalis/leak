@@ -8,7 +8,9 @@
 `Hey, what's leak? Keep it concise. https://github.com/eucalyptus-viminalis/leak`
 
 ### install
-`npm i leak`
+`npm i -g leak-cli`
+
+Package name: `leak-cli` | command: `leak`
 
 OpenClaw skill docs live in this repo at [`/skills/leak`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak); Clawhub listing coming soon.
 

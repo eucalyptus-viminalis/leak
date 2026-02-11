@@ -1,5 +1,5 @@
 {
-  "name": "leak",
+  "name": "leak-cli",
   "version": "2026.2.11",
   "description": "leak: x402 download server (Express)",
   "type": "module",
