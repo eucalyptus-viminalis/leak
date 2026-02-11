@@ -25,7 +25,20 @@ Notes:
 
 ## Publish a paywalled download (server)
 
+Preferred: use the helper script, which ensures install and prints a clear share link.
+
 ### Local-only (recommended default)
+
+```bash
+bash skills/leak/scripts/publish.sh \
+  --file /absolute/or/relative/path/to/file \
+  --price 0.01 \
+  --window 15m \
+  --pay-to 0xSELLER_ADDRESS \
+  --network eip155:84532
+```
+
+Direct CLI equivalent:
 
 ```bash
 leak leak \
@@ -43,6 +56,12 @@ What to share with the buyer:
 ### Public link (Cloudflare quick tunnel)
 
 Prereq: `cloudflared` installed.
+
+```bash
+bash skills/leak/scripts/publish.sh --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --public
+```
+
+Direct CLI equivalent:
 
 ```bash
 leak leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --public
