@@ -29,6 +29,25 @@ cd "$REPO_DIR"
 # Build args for `leak leak ...`
 ARGS=("leak")
 
+# Determine effective local port for display purposes.
+PORT=4021
+PREV=""
+for ARG in "$@"; do
+  if [ "$PREV" = "--port" ]; then
+    PORT="$ARG"
+    PREV=""
+    continue
+  fi
+  case "$ARG" in
+    --port)
+      PREV="--port"
+      ;;
+    --port=*)
+      PORT="${ARG#--port=}"
+      ;;
+  esac
+done
+
 # Pass through all flags.
 # NOTE: we intentionally don't try to interpret or validate; leak.js already does that.
 ARGS+=("$@")
@@ -53,7 +72,7 @@ if printf '%s\n' "$@" | grep -q -- '--public'; then
   exit "$CODE"
 else
   echo "[leak-skill] Starting leak server (no public tunnel)."
-  echo "[leak-skill] Local share link (same machine): http://127.0.0.1:4021/download"
+  echo "[leak-skill] Local share link (same machine): http://127.0.0.1:${PORT}/download"
   echo "[leak-skill] Tip: to expose publicly, re-run with --public (requires cloudflared)."
   exec leak "${ARGS[@]}"
 fi

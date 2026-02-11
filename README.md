@@ -11,7 +11,13 @@ cd ~/leak
 npm run leak -- --file /path/to/vape.jpg
 ```
 
-If you install this package globally / as a dependency, you can also run:
+If you install this package globally / as a dependency, you can run:
+
+```bash
+leak --file /path/to/vape.jpg
+```
+
+Backward-compatible form still supported:
 
 ```bash
 leak leak --file /path/to/vape.jpg
@@ -25,10 +31,27 @@ Optional flags:
 - `--price 0.01` (USDC)
 - `--window 1h` (or seconds)
 - `--confirmed` (settle on-chain before issuing token)
-- `--public` (start a temporary Cloudflare Tunnel and print a public URL)
+- `--public` (start a temporary Cloudflare Tunnel and print a public URL; requires `cloudflared`)
 - `--network eip155:84532`
 - `--pay-to 0x...`
 - `--port 4021`
+
+### Install `cloudflared` for `--public`
+
+`--public` needs the Cloudflare Tunnel binary on your PATH.
+
+```bash
+# macOS (Homebrew)
+brew install cloudflared
+
+# Windows (winget)
+winget install --id Cloudflare.cloudflared
+```
+
+Linux packages/docs:
+`https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/`
+
+If you don't need a public URL, run without `--public` for local-only mode.
 
 This mirrors the behavior of the Python scaffold in `~/paywall/paywall/server.py`:
 
@@ -180,8 +203,8 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
   - for Base mainnet: `eip155:8453` (requires a mainnet-capable facilitator)
 - `WINDOW_SECONDS` access token lifetime
 - `CONFIRMATION_POLICY`
-  - `optimistic` (default): verifies payment + issues token, but may not settle on-chain
-  - `confirmed`: settles via facilitator before issuing token (you should be able to see a tx on Basescan)
+  - `confirmed` (default): settles via facilitator before issuing token (you should be able to see a tx on Basescan)
+  - `optimistic`: verifies payment + issues token, but may not settle on-chain
 - `CONFIRMATIONS_REQUIRED` (currently informational; parity with Python scaffold)
 - `ARTIFACT_PATH` local file path
 - `PROTECTED_MIME` content type (default `application/octet-stream`)

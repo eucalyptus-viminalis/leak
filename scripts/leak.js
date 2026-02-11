@@ -2,20 +2,32 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
-function usageAndExit(code = 1) {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SERVER_ENTRY = path.resolve(__dirname, "..", "src", "index.js");
+
+function usageAndExit(code = 1, hint = "") {
+  if (hint) console.error(`Hint: ${hint}\n`);
   console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]`);
+  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]`);
+  console.log(``);
+  console.log(`Notes:`);
+  console.log(`  --public requires cloudflared (Cloudflare Tunnel) installed.`);
   console.log(`Examples:`);
+  console.log(`  leak --file ./vape.jpg`);
+  console.log(`  leak --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
   console.log(`  npm run leak -- --file ./vape.jpg`);
   console.log(`  npm run leak -- --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
   process.exit(code);
 }
 
 function parseArgs(argv) {
-  const args = {};
+  const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--help" || a === "-h") usageAndExit(0);
@@ -36,8 +48,42 @@ function parseArgs(argv) {
     } else {
       args[key] = true;
     }
+    continue;
+  }
+  for (const a of argv) {
+    if (!a.startsWith("--")) args._.push(a);
   }
   return args;
+}
+
+function cloudflaredPreflight() {
+  const probe = spawnSync("cloudflared", ["--version"], { stdio: "ignore" });
+  if (!probe.error && probe.status === 0) return { ok: true };
+
+  const missing = probe.error?.code === "ENOENT";
+  return {
+    ok: false,
+    missing,
+    reason: missing
+      ? "cloudflared is not installed or not on PATH."
+      : `cloudflared check failed (status=${probe.status ?? "n/a"}).`,
+  };
+}
+
+function printCloudflaredInstallHelp(localOnlyCmd) {
+  console.error("[leak] --public requested, but cloudflared is unavailable.");
+  console.error("[leak] cloudflared is required to create a public tunnel URL.");
+  console.error("");
+  console.error("[leak] Install cloudflared:");
+  console.error("  macOS (Homebrew): brew install cloudflared");
+  console.error("  Windows (winget): winget install --id Cloudflare.cloudflared");
+  console.error("  Linux packages/docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/");
+  console.error("");
+  console.error("[leak] Retry public mode after install:");
+  console.error("  leak --file <path> --pay-to <address> --public");
+  console.error("");
+  console.error("[leak] Local-only alternative (no tunnel):");
+  console.error(`  ${localOnlyCmd}`);
 }
 
 function parseDurationToSeconds(s) {
@@ -97,7 +143,16 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   const fileArg = args.file;
-  if (!fileArg) usageAndExit(1);
+  if (!fileArg) {
+    const positionalPath = args._?.[0];
+    if (positionalPath) {
+      usageAndExit(
+        1,
+        `Expected '--file <path>', but got positional '${positionalPath}'. If using npm scripts, run: npm run leak -- --file ${positionalPath}`,
+      );
+    }
+    usageAndExit(1);
+  }
 
   const artifactPath = resolveFile(fileArg);
   if (!fs.existsSync(artifactPath)) {
@@ -114,7 +169,7 @@ async function main() {
   const network = args.network || process.env.CHAIN_ID || "eip155:84532";
   const port = Number(args.port || process.env.PORT || 4021);
 
-  const confirmationPolicy = args.confirmed ? "confirmed" : (process.env.CONFIRMATION_POLICY || "optimistic");
+  const confirmationPolicy = args.confirmed ? "confirmed" : (process.env.CONFIRMATION_POLICY || "confirmed");
 
   const price = args.price || process.env.PRICE_USD; // we keep env name for compatibility
   const windowRaw = args.window || process.env.WINDOW_SECONDS;
@@ -142,9 +197,29 @@ async function main() {
   console.log(`- net:    ${network}`);
   console.log(`- mode:   ${confirmationPolicy}`);
 
-  const child = spawn(process.execPath, [path.resolve("src/index.js")], {
+  if (args.public) {
+    const preflight = cloudflaredPreflight();
+    if (!preflight.ok) {
+      const localOnlyCmd = `leak --file ${JSON.stringify(artifactPath)} --price ${prompted.price} --window ${prompted.windowSeconds}s --pay-to ${payTo} --network ${network}${confirmationPolicy === "confirmed" ? " --confirmed" : ""}${Number.isFinite(port) && port !== 4021 ? ` --port ${port}` : ""}`;
+      printCloudflaredInstallHelp(localOnlyCmd);
+      if (!preflight.missing) {
+        console.error(`[leak] detail: ${preflight.reason}`);
+      }
+      process.exit(1);
+    }
+  }
+
+  const child = spawn(process.execPath, [SERVER_ENTRY], {
     env,
     stdio: "inherit",
+  });
+
+  let stoppedByWindow = false;
+  let tunnelFatal = false;
+
+  child.on("error", (err) => {
+    console.error(`[leak] failed to start server process: ${err.message}`);
+    process.exit(1);
   });
 
   let tunnelProc = null;
@@ -160,6 +235,18 @@ async function main() {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+
+    tunnelProc.on("error", (err) => {
+      tunnelFatal = true;
+      if (err.code === "ENOENT") {
+        console.error("[leak] cloudflared not found. Install it or re-run without --public.");
+      } else {
+        console.error(`[leak] failed to start tunnel: ${err.message}`);
+      }
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+    });
 
     const urlRegex = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi;
     const onData = (chunk) => {
@@ -184,6 +271,7 @@ async function main() {
   }
 
   const stopAll = () => {
+    stoppedByWindow = true;
     console.log(`\n[leak] window expired (${prompted.windowSeconds}s). stopping...`);
     try {
       child.kill("SIGTERM");
@@ -200,10 +288,14 @@ async function main() {
     try {
       tunnelProc?.kill("SIGTERM");
     } catch {}
+    if (tunnelFatal) process.exit(1);
+    if (stoppedByWindow && signal === "SIGTERM") process.exit(0);
     if (signal) {
       console.log(`[leak] server exited (signal ${signal})`);
+      process.exit(1);
     } else {
       console.log(`[leak] server exited (code ${code})`);
+      process.exit(code ?? 1);
     }
   });
 }

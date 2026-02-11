@@ -73,6 +73,12 @@ function filenameFromContentDisposition(cd) {
   }
 }
 
+function sanitizeFilename(name) {
+  const base = path.basename(String(name || "").trim());
+  if (!base || base === "." || base === "..") return "downloaded.bin";
+  return base.replace(/[\u0000-\u001f\u007f]/g, "_");
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const downloadUrl = args._[0];
@@ -138,15 +144,17 @@ async function main() {
     data?.filename ||
     filenameFromContentDisposition(r3.headers.get("content-disposition")) ||
     "downloaded.bin";
+  const safeServerFilename = sanitizeFilename(serverFilename);
 
   let outPath;
   if (args.out) {
     outPath = String(args.out);
   } else if (args.basename) {
-    const ext = path.extname(serverFilename) || "";
-    outPath = `./${args.basename}${ext}`;
+    const safeBase = sanitizeFilename(args.basename);
+    const ext = path.extname(safeServerFilename) || "";
+    outPath = `./${safeBase}${ext}`;
   } else {
-    outPath = `./${serverFilename}`;
+    outPath = `./${safeServerFilename}`;
   }
 
   const buf = Buffer.from(await r3.arrayBuffer());

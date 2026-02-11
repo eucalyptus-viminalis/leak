@@ -1,27 +1,48 @@
 #!/usr/bin/env node
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const sub = process.argv[2];
 
+function runSubcommand(scriptName, argv) {
+  const scriptPath = path.resolve(__dirname, scriptName);
+  const child = spawn(process.execPath, [scriptPath, ...argv], {
+    stdio: "inherit",
+  });
+
+  child.on("error", (err) => {
+    console.error(`Failed to launch ${scriptName}: ${err.message}`);
+    process.exit(1);
+  });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      console.error(`${scriptName} exited via signal ${signal}`);
+      process.exit(1);
+    }
+    process.exit(code ?? 1);
+  });
+}
+
 if (!sub || sub === "--help" || sub === "-h") {
   console.log("Usage:");
-  console.log("  leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]");
+  console.log("  leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]");
   console.log("  leak buy <download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]");
+  console.log("");
+  console.log("Backward-compatible:");
+  console.log("  leak leak --file <path> ...");
   process.exit(0);
 }
 
 if (sub === "leak") {
-  const child = spawn(process.execPath, [path.resolve("scripts/leak.js"), ...process.argv.slice(3)], {
-    stdio: "inherit",
-  });
-  child.on("exit", (code) => process.exit(code ?? 0));
+  runSubcommand("leak.js", process.argv.slice(3));
 } else if (sub === "buy") {
-  const child = spawn(process.execPath, [path.resolve("scripts/buy.js"), ...process.argv.slice(3)], {
-    stdio: "inherit",
-  });
-  child.on("exit", (code) => process.exit(code ?? 0));
+  runSubcommand("buy.js", process.argv.slice(3));
 } else {
-  console.error(`Unknown subcommand: ${sub}`);
-  process.exit(1);
+  // Default command: treat all args as leak-server args.
+  runSubcommand("leak.js", process.argv.slice(2));
 }

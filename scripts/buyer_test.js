@@ -43,6 +43,12 @@ function getHeaderCaseInsensitive(headers, name) {
   return null;
 }
 
+function sanitizeFilename(name) {
+  const base = path.basename(String(name || "").trim());
+  if (!base || base === "." || base === "..") return "downloaded.bin";
+  return base.replace(/[\u0000-\u001f\u007f]/g, "_");
+}
+
 async function main() {
   // 1) First request: expect 402 with PAYMENT-REQUIRED header.
   const r1 = await fetch(`${BASE_URL}/download`, { method: "GET" });
@@ -91,11 +97,12 @@ async function main() {
   if (process.env.OUTPUT_PATH) {
     outPath = process.env.OUTPUT_PATH;
   } else if (OUTPUT_BASENAME) {
-    const serverName = data?.filename || "downloaded.bin";
+    const safeBase = sanitizeFilename(OUTPUT_BASENAME);
+    const serverName = sanitizeFilename(data?.filename || "downloaded.bin");
     const ext = path.extname(serverName) || "";
-    outPath = `./${OUTPUT_BASENAME}${ext}`;
+    outPath = `./${safeBase}${ext}`;
   } else if (data?.filename) {
-    outPath = `./${data.filename}`;
+    outPath = `./${sanitizeFilename(data.filename)}`;
   } else {
     outPath = OUTPUT_PATH;
   }

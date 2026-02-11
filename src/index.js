@@ -14,6 +14,12 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function parsePositiveInt(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.floor(n);
+}
+
 const PORT = Number(process.env.PORT || 4021);
 
 // Mirror the Python env names (with a couple backwards-compatible aliases)
@@ -23,8 +29,10 @@ const PRICE_USD = process.env.PRICE_USD || "1.00";
 const CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532"; // Base Sepolia (works with x402.org facilitator by default)
 const ARTIFACT_PATH = process.env.ARTIFACT_PATH || process.env.PROTECTED_FILE;
 const WINDOW_SECONDS = Number(process.env.WINDOW_SECONDS || 3600);
+const MAX_GRANTS = parsePositiveInt(process.env.MAX_GRANTS, 10000);
+const GRANT_SWEEP_SECONDS = parsePositiveInt(process.env.GRANT_SWEEP_SECONDS, 60);
 
-const CONFIRMATION_POLICY = process.env.CONFIRMATION_POLICY || "optimistic"; // optimistic|confirmed
+const CONFIRMATION_POLICY = process.env.CONFIRMATION_POLICY || "confirmed"; // optimistic|confirmed
 const CONFIRMATIONS_REQUIRED = Number(process.env.CONFIRMATIONS_REQUIRED || 1);
 
 const MIME_TYPE = process.env.PROTECTED_MIME || "application/octet-stream";
@@ -50,7 +58,25 @@ function now() {
   return Math.floor(Date.now() / 1000);
 }
 
+function pruneExpiredGrants() {
+  const ts = now();
+  for (const [token, grant] of GRANTS.entries()) {
+    if (grant.expiresAt < ts) GRANTS.delete(token);
+  }
+}
+
+function enforceGrantLimit() {
+  while (GRANTS.size >= MAX_GRANTS) {
+    const oldest = GRANTS.keys().next().value;
+    if (!oldest) return;
+    GRANTS.delete(oldest);
+  }
+}
+
 function mintGrant() {
+  pruneExpiredGrants();
+  enforceGrantLimit();
+
   const token = randomUUID().replaceAll("-", "");
   GRANTS.set(token, {
     token,
@@ -98,7 +124,24 @@ const routes = {
 };
 
 const httpServer = new x402HTTPResourceServer(coreServer, routes);
-await httpServer.initialize();
+try {
+  await httpServer.initialize();
+} catch (err) {
+  console.error("[startup] Failed to initialize x402 route configuration.");
+  console.error(`[startup] facilitator=${FACILITATOR_URL} network=${CHAIN_ID}`);
+  if (Array.isArray(err?.errors) && err.errors.length > 0) {
+    for (const e of err.errors) {
+      console.error(`[startup] ${e.message || JSON.stringify(e)}`);
+    }
+  } else {
+    console.error(`[startup] ${err?.message || String(err)}`);
+  }
+  process.exit(1);
+}
+
+setInterval(() => {
+  pruneExpiredGrants();
+}, GRANT_SWEEP_SECONDS * 1000).unref();
 
 app.get("/", (req, res) => {
   res.json({
@@ -161,11 +204,17 @@ app.use("/download", async (req, res, next) => {
     },
   };
 
-  const result = await httpServer.processHTTPRequest({
-    adapter,
-    path: fullPath,
-    method: req.method,
-  });
+  let result;
+  try {
+    result = await httpServer.processHTTPRequest({
+      adapter,
+      path: fullPath,
+      method: req.method,
+    });
+  } catch (err) {
+    console.error(`[x402] payment handshake failed: ${err?.message || String(err)}`);
+    return res.status(502).json({ error: "payment gateway unavailable" });
+  }
 
   if (result.type === "no-payment-required") return next();
 
@@ -192,7 +241,7 @@ app.get("/download", async (req, res) => {
     if (!check.ok) return res.status(403).json({ error: check.reason });
 
     const p = absArtifactPath();
-    if (!fs.existsSync(p)) return res.status(404).json({ error: "artifact not found", path: p });
+    if (!fs.existsSync(p)) return res.status(404).json({ error: "artifact not found" });
 
     res.setHeader("Content-Type", MIME_TYPE);
     res.setHeader("Content-Disposition", `attachment; filename=\"${path.basename(p)}\"`);
@@ -202,11 +251,17 @@ app.get("/download", async (req, res) => {
   // 2) No token: if we got here, payment has been verified by the middleware.
   // If you want immediate UX, just mint token. If you want stronger guarantees, settle.
   if (CONFIRMATION_POLICY === "confirmed") {
-    const settle = await httpServer.processSettlement(
-      req.x402.paymentPayload,
-      req.x402.paymentRequirements,
-      req.x402.declaredExtensions,
-    );
+    let settle;
+    try {
+      settle = await httpServer.processSettlement(
+        req.x402.paymentPayload,
+        req.x402.paymentRequirements,
+        req.x402.declaredExtensions,
+      );
+    } catch (err) {
+      console.error(`[x402] settlement request failed: ${err?.message || String(err)}`);
+      return res.status(502).json({ error: "payment settlement unavailable" });
+    }
 
     if (!settle.success) {
       return res.status(402).json({

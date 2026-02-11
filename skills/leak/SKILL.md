@@ -41,7 +41,7 @@ bash skills/leak/scripts/publish.sh \
 Direct CLI equivalent:
 
 ```bash
-leak leak \
+leak \
   --file /absolute/or/relative/path/to/file \
   --price 0.01 \
   --window 15m \
@@ -57,6 +57,19 @@ What to share with the buyer:
 
 Prereq: `cloudflared` installed.
 
+Install examples:
+
+```bash
+# macOS (Homebrew)
+brew install cloudflared
+
+# Windows (winget)
+winget install --id Cloudflare.cloudflared
+```
+
+Linux packages/docs:
+`https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/`
+
 ```bash
 bash skills/leak/scripts/publish.sh --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --public
 ```
@@ -64,7 +77,7 @@ bash skills/leak/scripts/publish.sh --file ./protected/asset.bin --price 0.01 --
 Direct CLI equivalent:
 
 ```bash
-leak leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --public
+leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --public
 ```
 
 The CLI will print something like:
@@ -78,7 +91,7 @@ Share the `/download` link.
 Use `--confirmed` to settle on-chain before issuing the token:
 
 ```bash
-leak leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --confirmed
+leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --confirmed
 ```
 
 ## Buy a paywalled download link
@@ -108,5 +121,5 @@ leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --b
 ## Troubleshooting
 
 - **`leak: command not found`** → run `bash skills/leak/scripts/ensure_leak.sh`.
-- **`--public` tunnel fails** → install `cloudflared` and retry.
+- **`--public` tunnel fails** → install `cloudflared` (`brew install cloudflared` on macOS), then retry.
 - **Port in use** → add `--port 4021` with a different number and use that port in the tunnel.
