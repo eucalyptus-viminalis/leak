@@ -1,6 +1,40 @@
 # leak
 
-`leak` turns a file on your machine into an x402 release link. Share `/` as the promo page (social-card friendly), and let agents purchase through `/download` using x402 with time-limited access.
+> `there is no platform\n<beautiful_milady.jpg>\ni love you`
+
+`leak` is a content exchange starter pack aimed at people that hate 🥴 subscriptions 😴 and 🌈 corporations 🌈. "bro just give up already it's 2026" well ackshually I think it's quite inevitable (see: >charts<). If you have (eyes and/or ears) OR (want money and/or create interesting little files on computah), try `leak`:
+
+### agent prompt 
+`Hey, what's leak? Keep it concise. https://github.com/eucalyptus-viminalis/leak`
+
+### install
+`npm i leak`
+
+### join the discord
+
+---
+
+## User Archetypes
+
+**Seller**:
+- publish payment-gated content straight from your computer
+  - set your own price 💸
+  - set available window 🪟
+  - tell your agent what you b *leakin'* 🤤
+- `💦 on-demand + one-shot + ephemeral ✨ -- store for your digital goods`
+- yes, install the `leak` 🦞 `OpenClaw` 🦞 `SKILL` and you can tell your agent to do all the above for you 🪬
+
+**Buyer**:
+- download cool sh!t straight to your device
+  - skip the bad 🤓 guys 😤
+  - NO MORE SUBSCRIPTIONS PLEASE (hehe)
+  - platform resi-. there is not platform, i love you.
+- `i be in my happy place, offline, listening to demo 45 and noone can stop me`
+
+**U MAD?**:
+- Spotify
+- OnlyFans
+- then we branch out to more niche, controversial industries
 
 ## Leak CLI (recommended)
 
