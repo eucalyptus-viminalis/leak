@@ -60,7 +60,15 @@ function escapeXml(value) {
 const PORT = Number(process.env.PORT || 4021);
 
 // Mirror the Python env names (with a couple backwards-compatible aliases)
-const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://x402.org/facilitator";
+const FACILITATOR_MODE = (process.env.FACILITATOR_MODE || "testnet").trim();
+const CDP_API_KEY_ID = (process.env.CDP_API_KEY_ID || "").trim();
+const CDP_API_KEY_SECRET = (process.env.CDP_API_KEY_SECRET || "").trim();
+const DEFAULT_TESTNET_FACILITATOR_URL = "https://x402.org/facilitator";
+const DEFAULT_CDP_MAINNET_FACILITATOR_URL = "https://api.cdp.coinbase.com/platform/v2/x402";
+const FACILITATOR_URL = (
+  process.env.FACILITATOR_URL ||
+  (FACILITATOR_MODE === "cdp_mainnet" ? DEFAULT_CDP_MAINNET_FACILITATOR_URL : DEFAULT_TESTNET_FACILITATOR_URL)
+).trim();
 const SELLER_PAY_TO = process.env.SELLER_PAY_TO || process.env.PAY_TO;
 const PRICE_USD = process.env.PRICE_USD || "1.00";
 const CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
@@ -86,6 +94,24 @@ const OG_IMAGE_PATH = OG_IMAGE_PATH_RAW
 const SALE_START_TS = parsePositiveInt(process.env.SALE_START_TS, now());
 const SALE_END_TS = parsePositiveInt(process.env.SALE_END_TS, SALE_START_TS + WINDOW_SECONDS);
 const ENDED_WINDOW_SECONDS = parseNonNegativeInt(process.env.ENDED_WINDOW_SECONDS, 0);
+const IS_BASE_MAINNET = CHAIN_ID === "eip155:8453";
+
+if (!new Set(["testnet", "cdp_mainnet"]).has(FACILITATOR_MODE)) {
+  console.error("Invalid FACILITATOR_MODE. Supported values: testnet, cdp_mainnet");
+  process.exit(1);
+}
+
+if (IS_BASE_MAINNET && FACILITATOR_MODE !== "cdp_mainnet") {
+  console.error("Invalid config: CHAIN_ID=eip155:8453 requires FACILITATOR_MODE=cdp_mainnet.");
+  console.error("Set FACILITATOR_MODE=cdp_mainnet and configure CDP_API_KEY_ID/CDP_API_KEY_SECRET.");
+  process.exit(1);
+}
+
+if (FACILITATOR_MODE === "cdp_mainnet" && (!CDP_API_KEY_ID || !CDP_API_KEY_SECRET)) {
+  console.error("Missing CDP credentials for FACILITATOR_MODE=cdp_mainnet.");
+  console.error("Set CDP_API_KEY_ID and CDP_API_KEY_SECRET in your environment.");
+  process.exit(1);
+}
 
 if (!SELLER_PAY_TO) {
   console.error("Missing required env var: SELLER_PAY_TO (or PAY_TO)");
@@ -132,6 +158,118 @@ function imageMimeTypeFromPath(filePath) {
   if (ext === ".svg") return "image/svg+xml";
   if (ext === ".avif") return "image/avif";
   return null;
+}
+
+function classifyFacilitatorError(err) {
+  const msg = (err?.message || String(err)).toLowerCase();
+  if (
+    msg.includes("401")
+    || msg.includes("403")
+    || msg.includes("unauthorized")
+    || msg.includes("forbidden")
+    || msg.includes("authorization")
+    || msg.includes("bearer")
+    || msg.includes("jwt")
+    || msg.includes("api key")
+    || msg.includes("invalid key format")
+  ) {
+    return "auth";
+  }
+  if (
+    msg.includes("does not support scheme")
+    || msg.includes("unsupported")
+    || (msg.includes("network") && (msg.includes("mismatch") || msg.includes("invalid")))
+  ) {
+    return "network";
+  }
+  return "generic";
+}
+
+function printFacilitatorHint(err) {
+  const kind = classifyFacilitatorError(err);
+  if (kind === "auth") {
+    console.error("[hint] Facilitator authentication failed.");
+    console.error("[hint] For mainnet, set FACILITATOR_MODE=cdp_mainnet and valid CDP_API_KEY_ID/CDP_API_KEY_SECRET.");
+    return;
+  }
+  if (kind === "network") {
+    console.error("[hint] Facilitator/network mismatch.");
+    console.error("[hint] Verify CHAIN_ID and FACILITATOR_URL/FACILITATOR_MODE are aligned.");
+    return;
+  }
+  if (IS_BASE_MAINNET) {
+    console.error("[hint] Base mainnet requires a mainnet-capable facilitator and valid auth.");
+  }
+}
+
+function joinUrlPath(basePath, suffix) {
+  const normalizedBase = basePath.replace(/\/+$/, "");
+  return `${normalizedBase}${suffix}`;
+}
+
+function createCdpAuthHeadersFactory() {
+  const url = new URL(FACILITATOR_URL);
+  const requestHost = url.host;
+  const verifyPath = joinUrlPath(url.pathname, "/verify");
+  const settlePath = joinUrlPath(url.pathname, "/settle");
+  const supportedPath = joinUrlPath(url.pathname, "/supported");
+
+  return async () => {
+    let generateJwt;
+    try {
+      ({ generateJwt } = await import("@coinbase/cdp-sdk/auth"));
+    } catch {
+      throw new Error("CDP auth helper unavailable. Install @coinbase/cdp-sdk and retry.");
+    }
+
+    const createAuthorization = async (requestMethod, requestPath) => {
+      const jwt = await generateJwt({
+        apiKeyId: CDP_API_KEY_ID,
+        apiKeySecret: CDP_API_KEY_SECRET,
+        requestMethod,
+        requestHost,
+        requestPath,
+        expiresIn: 120,
+      });
+      return { Authorization: `Bearer ${jwt}` };
+    };
+
+    return {
+      verify: await createAuthorization("POST", verifyPath),
+      settle: await createAuthorization("POST", settlePath),
+      supported: await createAuthorization("GET", supportedPath),
+    };
+  };
+}
+
+async function preflightCdpAuth() {
+  if (FACILITATOR_MODE !== "cdp_mainnet") return;
+
+  let generateJwt;
+  try {
+    ({ generateJwt } = await import("@coinbase/cdp-sdk/auth"));
+  } catch {
+    console.error("[startup] Missing CDP auth dependency. Install @coinbase/cdp-sdk.");
+    process.exit(1);
+  }
+
+  const url = new URL(FACILITATOR_URL);
+  const requestHost = url.host;
+  const supportedPath = joinUrlPath(url.pathname, "/supported");
+  try {
+    await generateJwt({
+      apiKeyId: CDP_API_KEY_ID,
+      apiKeySecret: CDP_API_KEY_SECRET,
+      requestMethod: "GET",
+      requestHost,
+      requestPath: supportedPath,
+      expiresIn: 120,
+    });
+  } catch (err) {
+    console.error("[startup] CDP auth preflight failed.");
+    console.error(`[startup] ${err?.message || String(err)}`);
+    process.exit(1);
+  }
 }
 
 function promoModel(req) {
@@ -360,7 +498,12 @@ function validateAndConsumeToken(token) {
 const app = express();
 
 // x402 core server + HTTP wrapper
-const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
+await preflightCdpAuth();
+const facilitatorConfig = { url: FACILITATOR_URL };
+if (FACILITATOR_MODE === "cdp_mainnet") {
+  facilitatorConfig.createAuthHeaders = createCdpAuthHeadersFactory();
+}
+const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfig);
 const coreServer = new x402ResourceServer(facilitatorClient).register(CHAIN_ID, new ExactEvmScheme());
 
 // Route config for x402HTTPResourceServer
@@ -385,7 +528,7 @@ try {
   await httpServer.initialize();
 } catch (err) {
   console.error("[startup] Failed to initialize x402 route configuration.");
-  console.error(`[startup] facilitator=${FACILITATOR_URL} network=${CHAIN_ID}`);
+  console.error(`[startup] facilitator=${FACILITATOR_URL} mode=${FACILITATOR_MODE} network=${CHAIN_ID}`);
   if (Array.isArray(err?.errors) && err.errors.length > 0) {
     for (const e of err.errors) {
       console.error(`[startup] ${e.message || JSON.stringify(e)}`);
@@ -393,6 +536,7 @@ try {
   } else {
     console.error(`[startup] ${err?.message || String(err)}`);
   }
+  printFacilitatorHint(err);
   process.exit(1);
 }
 
@@ -419,6 +563,7 @@ app.get("/info", (req, res) => {
     confirmation_policy: CONFIRMATION_POLICY,
     confirmations_required: CONFIRMATIONS_REQUIRED,
     facilitator_url: FACILITATOR_URL,
+    facilitator_mode: FACILITATOR_MODE,
   });
 });
 
@@ -523,6 +668,7 @@ app.use("/download", async (req, res, next) => {
     });
   } catch (err) {
     console.error(`[x402] payment handshake failed: ${err?.message || String(err)}`);
+    printFacilitatorHint(err);
     return res.status(502).json({ error: "payment gateway unavailable" });
   }
 
@@ -574,6 +720,7 @@ app.get("/download", async (req, res) => {
       );
     } catch (err) {
       console.error(`[x402] settlement request failed: ${err?.message || String(err)}`);
+      printFacilitatorHint(err);
       return res.status(502).json({ error: "payment settlement unavailable" });
     }
 
@@ -604,6 +751,9 @@ app.get("/download", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`x402-node listening on http://localhost:${PORT}`);
+  console.log(`facilitator mode: ${FACILITATOR_MODE}`);
+  console.log(`facilitator url:  ${FACILITATOR_URL}`);
+  console.log(`network:          ${CHAIN_ID}`);
   console.log(`promo:   http://localhost:${PORT}/ (share this)`);
   console.log(`info:    http://localhost:${PORT}/info`);
   console.log(`health:  http://localhost:${PORT}/health`);

@@ -91,6 +91,9 @@ Linux packages/docs:
 
 If you don't need a public URL, run without `--public` for local-only mode.
 
+For now, Cloudflare quick tunnel (`--public`) is supported for both dev and early production rollout.
+Custom-domain ingress can be added later.
+
 ### Tweeting a release
 
 When using `--public`, share the **promo URL** (`/`) in your tweet.
@@ -114,6 +117,34 @@ This mirrors the behavior of the original Python scaffold implementation:
 - `GET /download` without payment → **402** with `PAYMENT-REQUIRED` header
 - `GET /download` with valid payment headers → returns a **time-limited token** JSON
 - `GET /download?token=...` → streams the artifact
+
+### Testnet vs Mainnet facilitator setup
+
+`CHAIN_ID=eip155:8453` by itself is **not enough** for production.
+
+Base Sepolia / testnet:
+
+```bash
+FACILITATOR_MODE=testnet
+FACILITATOR_URL=https://x402.org/facilitator
+CHAIN_ID=eip155:84532
+```
+
+Base mainnet (CDP facilitator auth required):
+
+```bash
+FACILITATOR_MODE=cdp_mainnet
+FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402
+CHAIN_ID=eip155:8453
+CDP_API_KEY_ID=...
+CDP_API_KEY_SECRET=...
+```
+
+Recommended for production-like behavior:
+
+```bash
+CONFIRMATION_POLICY=confirmed
+```
 
 ---
 
@@ -259,12 +290,19 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 ## Env vars
 
 - `PORT` (default `4021`)
-- `FACILITATOR_URL` (default: `https://x402.org/facilitator`)
+- `FACILITATOR_MODE`
+  - `testnet` (default)
+  - `cdp_mainnet` (required for Base mainnet path in this project)
+- `FACILITATOR_URL`
+  - default with `FACILITATOR_MODE=testnet`: `https://x402.org/facilitator`
+  - default with `FACILITATOR_MODE=cdp_mainnet`: `https://api.cdp.coinbase.com/platform/v2/x402`
 - `SELLER_PAY_TO` receiving address
 - `PRICE_USD` (string like `1.00`)
 - `CHAIN_ID`
   - default: `eip155:84532` (Base Sepolia) for `x402.org/facilitator`
-  - for Base mainnet: `eip155:8453` (requires a mainnet-capable facilitator)
+  - Base mainnet: `eip155:8453` (requires `FACILITATOR_MODE=cdp_mainnet` plus CDP keys)
+- `CDP_API_KEY_ID` (required with `FACILITATOR_MODE=cdp_mainnet`)
+- `CDP_API_KEY_SECRET` (required with `FACILITATOR_MODE=cdp_mainnet`)
 - `WINDOW_SECONDS` access token lifetime
 - `SALE_START_TS` sale start (unix seconds; usually set by launcher)
 - `SALE_END_TS` sale end (unix seconds; usually set by launcher)
@@ -306,3 +344,13 @@ This server accepts legacy `X-PAYMENT` by aliasing it to `PAYMENT-SIGNATURE`.
 ### Running under OpenClaw / timeouts
 
 If you see a `SIGKILL` after “listening …”, it usually means the command was run with a short timeout during automated testing. Running via `npm run dev` in your own terminal will keep it alive.
+
+### Facilitator troubleshooting
+
+- Startup error mentions `does not support scheme` or network mismatch:
+  - your `CHAIN_ID` and facilitator mode/url are misaligned.
+  - verify testnet vs mainnet settings above.
+
+- Startup or runtime error mentions `401`, `403`, `authorization`, or `jwt`:
+  - facilitator auth is missing/invalid.
+  - for mainnet, ensure `FACILITATOR_MODE=cdp_mainnet` plus valid `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`.
