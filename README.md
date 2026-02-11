@@ -2,17 +2,95 @@
 
 > `there is no platform\n<beautiful_milady.jpg>\ni love you`
 
-`leak` is a content exchange starter pack aimed at people that hate 🥴 subscriptions 😴 and 🌈 corporations 🌈. "bro just give up already it's 2026" -- well ackshually I think it's quite inevitable (see: charts). Convinced? If you have (eyes and/or ears) OR (want money and/or create interesting little files on computah), try `leak` today.
+**Leak** is a content creator tool that can set up a time-boxed online store hosted straight from your computer. It leverages open source tools, the x402 protocol, and AI assistants (like OpenClaw) to make selling digital goods as easy as asking your agent about the weather. Leak is for fans too; buying content is easy as giving your agent the download link shared by your favorite creators and funding your agent with USDC -- installing the leak skill makes this all a breeze.
+
+## Quick Start
+
+### Install
+
+```bash
+npm i -g leak-cli
+```
+
+Package name: `leak-cli`
+
+Command: `leak`
+
+OpenClaw skill docs live in this repo at [`/skills/leak`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak); Clawhub listing coming soon.
+
+### Seller Quickstart 1: Local testnet sale (fastest path)
+
+Goal: run a local sale and verify the x402 flow end to end.
+
+Prereqs: fund a buyer test wallet on Base Sepolia ([Circle Faucet](https://faucet.circle.com)); no CDP mainnet setup is needed. 
+
+```bash
+leak --file ./your-file.bin --pay-to 0xYOUR_ADDRESS --price 0.01 --window 15m --network eip155:84532
+```
+
+Expected output:
+- server URLs for `/`, `/health`, and `/download`
+- `/download` is x402-protected
+
+Verification:
+
+```bash
+curl -i http://127.0.0.1:4021/download
+```
+
+Expected result: `402` plus a `PAYMENT-REQUIRED` header.
+
+### Seller Quickstart 2: Public testnet sale (shareable link)
+
+Goal: create a public share link for social posting.
+
+```bash
+brew install cloudflared
+```
+
+```bash
+leak --file ./your-file.bin --pay-to 0xYOUR_ADDRESS --price 0.01 --window 30m --network eip155:84532 --public --og-title "Your Release Title" --og-description "Limited release. Agent-assisted purchase."
+```
+
+Use the output URLs like this:
+- share `https://<tunnel>/` as your promo URL (optimized for OpenGraph metadata on feeds and chats)
+- agents will use `https://<tunnel>/download` to buy (x402-protected link)
+- open the promo URL in a browser and confirm title, description, and image render correctly for social cards
+
+### Buyer Skeleton (pre-Clawhub)
+
+Use the direct CLI buy flow for now.
+
+```bash
+leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xYOUR_BUYER_KEY
+```
+
+By default, the file is saved to your current directory using the server-provided filename; use `--out` or `--basename` to control naming.
+
+Security note: use a dedicated buyer key with limited funds.
+
+### Buyer Skeleton (post-Clawhub, placeholder)
+
+To be finalized after Clawhub skill publish.
+
+- install the leak skill from Clawhub
+- give your agent the `/download` URL
+- let the agent handle payment and save flow through the skill
+
+### Next: Mainnet checklist (optional)
+
+Warning: switching only `CHAIN_ID` to mainnet is not sufficient.
+
+Required:
+- `FACILITATOR_MODE=cdp_mainnet`
+- `CHAIN_ID=eip155:8453`
+- `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`
+- recommended: `CONFIRMATION_POLICY=confirmed`
+
+Reference: see [Testnet vs Mainnet facilitator setup](#testnet-vs-mainnet-facilitator-setup) below.
 
 ### agent prompt 
 `Hey, what's leak? Keep it concise. https://github.com/eucalyptus-viminalis/leak`
-
-### install
-`npm i -g leak-cli`
-
-Package name: `leak-cli` | command: `leak`
-
-OpenClaw skill docs live in this repo at [`/skills/leak`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak); Clawhub listing coming soon.
 
 ### join the discord
 
@@ -98,9 +176,9 @@ If you don't need a public URL, run without `--public` for local-only mode.
 For now, Cloudflare quick tunnel (`--public`) is supported for both dev and early production rollout.
 Custom-domain ingress can be added later.
 
-### Tweeting a release
+### Tweeting/sharing a release
 
-When using `--public`, share the **promo URL** (`/`) in your tweet.
+When using `--public`, share the **promo URL** (`/`) in your tweet/chat message.
 
 - `https://<tunnel>/` → promo page with OG/Twitter card metadata
 - `https://<tunnel>/download` → x402 endpoint for agents
