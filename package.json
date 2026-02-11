@@ -28,5 +28,6 @@
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
     "viem": "^2.45.2"
-  }
+  },
+  "packageManager": "npm@10.9.0"
 }
