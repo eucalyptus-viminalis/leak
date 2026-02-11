@@ -1,7 +1,7 @@
 {
   "name": "leak",
   "version": "2026.2.11",
-  "description": "leak: x402 paywalled download server (Express)",
+  "description": "leak: x402 download server (Express)",
   "type": "module",
   "main": "src/index.js",
   "bin": {
@@ -17,8 +17,9 @@
   },
   "keywords": [
     "x402",
-    "paywall",
-    "express"
+    "file-sharing",
+    "micropayments",
+    "openclaw"
   ],
   "license": "ISC",
   "dependencies": {

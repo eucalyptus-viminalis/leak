@@ -1,14 +1,14 @@
 ---
 name: leak
-description: Create and consume x402 paywalled download links using the leak CLI/server. Use when the user asks to “leak this file”, “paywall this download”, “start a paid download link”, “make an x402 402-protected download”, or to “buy/download a leak link”.
+description: Create and consume x402 download links using the leak CLI/server. Use when the user asks to “leak this file”, “x402-protect this download”, “start a paid download link”, “make an x402 402-protected download”, or to “buy/download a leak link”.
 ---
 
-# leak (x402 paywalled downloads)
+# leak (x402 downloads)
 
 This skill operates the `leak` project:
 - **Publish** a file behind an x402 `402 Payment Required` gate and mint a time-limited token after payment.
 - **Share** `/` as the promo URL (social-card friendly) and use `/download` for the purchase flow.
-- **Buy** a paywalled `/download` URL and save the artifact locally.
+- **Buy** an x402 `/download` URL and save the artifact locally.
 
 ## Install / ensure CLI exists (first step)
 
@@ -24,7 +24,7 @@ Notes:
 - Installs into `~/leak` (clones if missing).
 - Runs `npm install` and `npm link` so `leak ...` works globally.
 
-## Publish a paywalled download (server)
+## Publish an x402 download (server)
 
 Preferred: use the helper script, which ensures install and prints a clear share link.
 
@@ -106,7 +106,7 @@ Use `--confirmed` to settle on-chain before issuing the token:
 leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --confirmed
 ```
 
-## Buy a paywalled download link
+## Buy an x402 download link
 
 Preferred: use the helper script (ensures install first).
 
