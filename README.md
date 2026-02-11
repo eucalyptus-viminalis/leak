@@ -1,8 +1,10 @@
 # leak
 
-> `there is no platform\n<beautiful_milady.jpg>\ni love you`
+- `there is no platform\n<beautiful_milady.jpg>\ni love you`
+- cutting-edge architecture with dial-up sensibilities
+- "For a limited time only."
 
-**Leak** is a content creator tool that can set up a time-boxed online store hosted straight from your computer. It leverages open source tools, the x402 protocol, and AI assistants (like OpenClaw) to make selling digital goods as easy as asking your agent about the weather. Leak is for fans too; buying content is easy as giving your agent the download link shared by your favorite creators and funding your agent with USDC -- installing the leak skill makes this all a breeze.
+**Leak** is a content creator tool that can set up a time-boxed online store hosted straight from your computer. It leverages open source tools, the x402 protocol, and AI assistants (like OpenClaw) to make selling digital goods as easy as asking your agent about the weather. Leak is for fans too; buying content is easy as giving your agent the download link shared by your favorite creators and funding your agent with USDC -- installing the leak skill makes all of this a breeze.
 
 ## Quick Start
 
