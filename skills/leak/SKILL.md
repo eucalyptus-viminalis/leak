@@ -83,6 +83,14 @@ leak leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... 
 
 ## Buy a paywalled download link
 
+Preferred: use the helper script (ensures install first).
+
+```bash
+bash skills/leak/scripts/buy.sh "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xBUYER_KEY
+```
+
+Direct CLI equivalent:
+
 ```bash
 leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xBUYER_KEY
 ```
