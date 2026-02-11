@@ -30,9 +30,11 @@ function runSubcommand(scriptName, argv) {
 
 if (!sub || sub === "--help" || sub === "-h") {
   console.log("Usage:");
-  console.log("  leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]");
+  console.log("  leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...>] [--ended-window-seconds <seconds>]");
   console.log("  leak buy <download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]");
   console.log("");
+  console.log("Notes:");
+  console.log("  share / as promo (social card), use /download for agent-assisted purchase.");
   console.log("Backward-compatible:");
   console.log("  leak leak --file <path> ...");
   process.exit(0);

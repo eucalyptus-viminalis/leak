@@ -1,10 +1,10 @@
 # leak
 
-Node (Express) implementation of an **x402 paywalled download** ("leak").
+`leak` turns a file on your machine into a paywalled release link. Share `/` as the promo page (social-card friendly), and let agents purchase through `/download` using x402 with time-limited access.
 
 ## Leak CLI (recommended)
 
-The easiest way to run the server is the `leak` CLI, which will prompt you for missing info (price + duration) and auto-stop the server when the window expires.
+The easiest way to run the server is the `leak` CLI, which prompts for missing info (price + duration) and auto-stops after the sale window (or `window + ended-window`, if configured).
 
 ```bash
 cd ~/leak
@@ -32,6 +32,10 @@ Optional flags:
 - `--window 1h` (or seconds)
 - `--confirmed` (settle on-chain before issuing token)
 - `--public` (start a temporary Cloudflare Tunnel and print a public URL; requires `cloudflared`)
+- `--og-title "My Drop"`
+- `--og-description "Agent-assisted purchase"`
+- `--og-image-url https://...` (absolute `http(s)` URL)
+- `--ended-window-seconds 86400` (keep ended promo page online before auto-stop)
 - `--network eip155:84532`
 - `--pay-to 0x...`
 - `--port 4021`
@@ -52,6 +56,22 @@ Linux packages/docs:
 `https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/`
 
 If you don't need a public URL, run without `--public` for local-only mode.
+
+### Tweeting a release
+
+When using `--public`, share the **promo URL** (`/`) in your tweet.
+
+- `https://<tunnel>/` → promo page with OG/Twitter card metadata
+- `https://<tunnel>/download` → paywalled x402 endpoint for agents
+
+Example:
+
+```bash
+npm run leak -- --file ./song.mp3 --pay-to 0x... --price 1 --window 1h --public \
+  --og-title "New Single: Nightwire" \
+  --og-description "Limited release. Agent-assisted purchase." \
+  --og-image-url https://cdn.example.com/nightwire-cover.jpg
+```
 
 This mirrors the behavior of the Python scaffold in `~/paywall/paywall/server.py`:
 
@@ -101,9 +121,10 @@ npm start
 ```
 
 Server will print:
-- `http://localhost:4021/` (info)
+- `http://localhost:4021/` (promo page)
+- `http://localhost:4021/info` (machine-readable info)
 - `http://localhost:4021/health`
-- `http://localhost:4021/download`
+- `http://localhost:4021/download` (x402-protected)
 
 ---
 
@@ -186,9 +207,15 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 
 ## Routes
 
-- `GET /` info
-- `GET /health` (free)
-- `GET /download` (x402-protected)
+- `GET /` promo HTML page with OG/Twitter tags
+  - `200` while sale is active
+  - `410` once sale has ended
+- `GET /info` machine-readable JSON status (compat endpoint)
+- `GET /og.svg` fallback OG image (used when `--og-image-url` is not set)
+- `GET /health` free health check
+- `GET /download` x402-protected download endpoint
+  - active sale: normal x402/token flow
+  - ended sale: `410`
 
 ---
 
@@ -202,12 +229,21 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
   - default: `eip155:84532` (Base Sepolia) for `x402.org/facilitator`
   - for Base mainnet: `eip155:8453` (requires a mainnet-capable facilitator)
 - `WINDOW_SECONDS` access token lifetime
+- `SALE_START_TS` sale start (unix seconds; usually set by launcher)
+- `SALE_END_TS` sale end (unix seconds; usually set by launcher)
+- `ENDED_WINDOW_SECONDS`
+  - `--public` default in launcher: `86400` (24h)
+  - local-only default in launcher: `0`
 - `CONFIRMATION_POLICY`
   - `confirmed` (default): settles via facilitator before issuing token (you should be able to see a tx on Basescan)
   - `optimistic`: verifies payment + issues token, but may not settle on-chain
 - `CONFIRMATIONS_REQUIRED` (currently informational; parity with Python scaffold)
 - `ARTIFACT_PATH` local file path
 - `PROTECTED_MIME` content type (default `application/octet-stream`)
+- `OG_TITLE` optional card/page title (or use `--og-title`)
+- `OG_DESCRIPTION` optional card/page description (or use `--og-description`)
+- `OG_IMAGE_URL` optional absolute `http(s)` card image URL (or use `--og-image-url`)
+- `PUBLIC_BASE_URL` optional absolute base URL for metadata canonicalization
 
 ---
 

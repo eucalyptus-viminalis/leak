@@ -7,6 +7,7 @@ description: Create and consume x402 paywalled download links using the leak CLI
 
 This skill operates the `leak` project:
 - **Publish** a file behind an x402 `402 Payment Required` gate and mint a time-limited token after payment.
+- **Share** `/` as the promo URL (social-card friendly) and use `/download` for the purchase flow.
 - **Buy** a paywalled `/download` URL and save the artifact locally.
 
 ## Install / ensure CLI exists (first step)
@@ -82,9 +83,20 @@ leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --pub
 
 The CLI will print something like:
 - `[leak] public URL: https://xxxx.trycloudflare.com`
-- `[leak] share link: https://xxxx.trycloudflare.com/download`
+- `[leak] promo link: https://xxxx.trycloudflare.com/`
+- `[leak] buy link:   https://xxxx.trycloudflare.com/download`
 
-Share the `/download` link.
+Share `/` in social posts. Use `/download` for agent-assisted purchases.
+
+Optional card metadata flags:
+
+```bash
+leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --public \
+  --og-title "Nightwire" \
+  --og-description "Limited release, agent-assisted purchase" \
+  --og-image-url https://cdn.example.com/nightwire-cover.jpg \
+  --ended-window-seconds 86400
+```
 
 ### Confirmed settlement (optional)
 

@@ -13,14 +13,15 @@ const SERVER_ENTRY = path.resolve(__dirname, "..", "src", "index.js");
 
 function usageAndExit(code = 1, hint = "") {
   if (hint) console.error(`Hint: ${hint}\n`);
-  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]`);
-  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public]`);
+  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...>] [--ended-window-seconds <seconds>]`);
+  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...>] [--ended-window-seconds <seconds>]`);
   console.log(``);
   console.log(`Notes:`);
   console.log(`  --public requires cloudflared (Cloudflare Tunnel) installed.`);
   console.log(`Examples:`);
   console.log(`  leak --file ./vape.jpg`);
   console.log(`  leak --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
+  console.log(`  leak --file ./vape.jpg --public --og-title "My New Drop" --og-description "Agent-assisted purchase"`);
   console.log(`  npm run leak -- --file ./vape.jpg`);
   console.log(`  npm run leak -- --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
   process.exit(code);
@@ -54,6 +55,22 @@ function parseArgs(argv) {
     if (!a.startsWith("--")) args._.push(a);
   }
   return args;
+}
+
+function parseNonNegativeInt(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.floor(n);
+}
+
+function isAbsoluteHttpUrl(value) {
+  try {
+    const u = new URL(String(value));
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function cloudflaredPreflight() {
@@ -170,12 +187,33 @@ async function main() {
   const port = Number(args.port || process.env.PORT || 4021);
 
   const confirmationPolicy = args.confirmed ? "confirmed" : (process.env.CONFIRMATION_POLICY || "confirmed");
+  const ogTitle = typeof args["og-title"] === "string" ? args["og-title"] : process.env.OG_TITLE;
+  const ogDescription = typeof args["og-description"] === "string" ? args["og-description"] : process.env.OG_DESCRIPTION;
+  const ogImageUrl = typeof args["og-image-url"] === "string" ? args["og-image-url"] : process.env.OG_IMAGE_URL;
+  const endedWindowArg = args["ended-window-seconds"] ?? process.env.ENDED_WINDOW_SECONDS;
+  const defaultEndedWindowSeconds = args.public ? 86400 : 0;
+  const endedWindowSeconds = parseNonNegativeInt(endedWindowArg);
 
   const price = args.price || process.env.PRICE_USD; // we keep env name for compatibility
   const windowRaw = args.window || process.env.WINDOW_SECONDS;
   const windowSeconds = typeof windowRaw === "string" ? parseDurationToSeconds(windowRaw) : Number(windowRaw);
 
   const prompted = await promptMissing({ price, windowSeconds: windowSeconds || null });
+
+  if (endedWindowArg !== undefined && endedWindowSeconds === null) {
+    console.error("Invalid --ended-window-seconds (must be a non-negative integer)");
+    process.exit(1);
+  }
+
+  if (ogImageUrl && !isAbsoluteHttpUrl(ogImageUrl)) {
+    console.error("Invalid --og-image-url (must be an absolute http:// or https:// URL)");
+    process.exit(1);
+  }
+
+  const saleStartTs = Math.floor(Date.now() / 1000);
+  const saleEndTs = saleStartTs + prompted.windowSeconds;
+  const effectiveEndedWindowSeconds = endedWindowSeconds ?? defaultEndedWindowSeconds;
+  const stopAfterSeconds = prompted.windowSeconds + effectiveEndedWindowSeconds;
 
   // Spawn the server with explicit env so there's no confusion.
   const env = {
@@ -187,6 +225,13 @@ async function main() {
     WINDOW_SECONDS: String(prompted.windowSeconds),
     CONFIRMATION_POLICY: confirmationPolicy,
     ARTIFACT_PATH: artifactPath,
+    OG_TITLE: ogTitle || "",
+    OG_DESCRIPTION: ogDescription || "",
+    OG_IMAGE_URL: ogImageUrl || "",
+    SALE_START_TS: String(saleStartTs),
+    SALE_END_TS: String(saleEndTs),
+    ENDED_WINDOW_SECONDS: String(effectiveEndedWindowSeconds),
+    PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "",
   };
 
   console.log("\nLeak config:");
@@ -196,11 +241,15 @@ async function main() {
   console.log(`- to:     ${payTo}`);
   console.log(`- net:    ${network}`);
   console.log(`- mode:   ${confirmationPolicy}`);
+  if (ogTitle) console.log(`- og_title: ${ogTitle}`);
+  if (ogDescription) console.log(`- og_description: ${ogDescription}`);
+  if (ogImageUrl) console.log(`- og_image_url: ${ogImageUrl}`);
+  console.log(`- ended_window: ${effectiveEndedWindowSeconds}s`);
 
   if (args.public) {
     const preflight = cloudflaredPreflight();
     if (!preflight.ok) {
-      const localOnlyCmd = `leak --file ${JSON.stringify(artifactPath)} --price ${prompted.price} --window ${prompted.windowSeconds}s --pay-to ${payTo} --network ${network}${confirmationPolicy === "confirmed" ? " --confirmed" : ""}${Number.isFinite(port) && port !== 4021 ? ` --port ${port}` : ""}`;
+      const localOnlyCmd = `leak --file ${JSON.stringify(artifactPath)} --price ${prompted.price} --window ${prompted.windowSeconds}s --pay-to ${payTo} --network ${network}${confirmationPolicy === "confirmed" ? " --confirmed" : ""}${Number.isFinite(port) && port !== 4021 ? ` --port ${port}` : ""}${effectiveEndedWindowSeconds > 0 ? ` --ended-window-seconds ${effectiveEndedWindowSeconds}` : ""}`;
       printCloudflaredInstallHelp(localOnlyCmd);
       if (!preflight.missing) {
         console.error(`[leak] detail: ${preflight.reason}`);
@@ -253,8 +302,11 @@ async function main() {
       const s = chunk.toString("utf8");
       const m = s.match(urlRegex);
       if (m && m[0]) {
+        const promoUrl = `${m[0]}/`;
+        const buyUrl = `${m[0]}/download`;
         console.log(`\n[leak] public URL: ${m[0]}`);
-        console.log(`[leak] share link: ${m[0]}/download`);
+        console.log(`[leak] promo link: ${promoUrl}`);
+        console.log(`[leak] buy link:   ${buyUrl}`);
         // only print once
         tunnelProc?.stdout?.off("data", onData);
         tunnelProc?.stderr?.off("data", onData);
@@ -272,7 +324,13 @@ async function main() {
 
   const stopAll = () => {
     stoppedByWindow = true;
-    console.log(`\n[leak] window expired (${prompted.windowSeconds}s). stopping...`);
+    if (effectiveEndedWindowSeconds > 0) {
+      console.log(
+        `\n[leak] ended-window elapsed (${effectiveEndedWindowSeconds}s after sale end). stopping...`,
+      );
+    } else {
+      console.log(`\n[leak] window expired (${prompted.windowSeconds}s). stopping...`);
+    }
     try {
       child.kill("SIGTERM");
     } catch {}
@@ -281,7 +339,7 @@ async function main() {
     } catch {}
   };
 
-  const stopTimer = setTimeout(stopAll, prompted.windowSeconds * 1000);
+  const stopTimer = setTimeout(stopAll, stopAfterSeconds * 1000);
 
   child.on("exit", (code, signal) => {
     clearTimeout(stopTimer);

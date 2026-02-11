@@ -20,13 +20,50 @@ function parsePositiveInt(value, fallback) {
   return Math.floor(n);
 }
 
+function parseNonNegativeInt(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.floor(n);
+}
+
+function now() {
+  return Math.floor(Date.now() / 1000);
+}
+
+function isAbsoluteHttpUrl(value) {
+  try {
+    const u = new URL(String(value));
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
 const PORT = Number(process.env.PORT || 4021);
 
 // Mirror the Python env names (with a couple backwards-compatible aliases)
 const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://x402.org/facilitator";
 const SELLER_PAY_TO = process.env.SELLER_PAY_TO || process.env.PAY_TO;
 const PRICE_USD = process.env.PRICE_USD || "1.00";
-const CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532"; // Base Sepolia (works with x402.org facilitator by default)
+const CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
 const ARTIFACT_PATH = process.env.ARTIFACT_PATH || process.env.PROTECTED_FILE;
 const WINDOW_SECONDS = Number(process.env.WINDOW_SECONDS || 3600);
 const MAX_GRANTS = parsePositiveInt(process.env.MAX_GRANTS, 10000);
@@ -36,6 +73,15 @@ const CONFIRMATION_POLICY = process.env.CONFIRMATION_POLICY || "confirmed"; // o
 const CONFIRMATIONS_REQUIRED = Number(process.env.CONFIRMATIONS_REQUIRED || 1);
 
 const MIME_TYPE = process.env.PROTECTED_MIME || "application/octet-stream";
+
+const OG_TITLE = (process.env.OG_TITLE || "").trim();
+const OG_DESCRIPTION = (process.env.OG_DESCRIPTION || "").trim();
+const OG_IMAGE_URL = (process.env.OG_IMAGE_URL || "").trim();
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim();
+
+const SALE_START_TS = parsePositiveInt(process.env.SALE_START_TS, now());
+const SALE_END_TS = parsePositiveInt(process.env.SALE_END_TS, SALE_START_TS + WINDOW_SECONDS);
+const ENDED_WINDOW_SECONDS = parseNonNegativeInt(process.env.ENDED_WINDOW_SECONDS, 0);
 
 if (!SELLER_PAY_TO) {
   console.error("Missing required env var: SELLER_PAY_TO (or PAY_TO)");
@@ -50,13 +96,150 @@ function absArtifactPath() {
   return path.isAbsolute(ARTIFACT_PATH) ? ARTIFACT_PATH : path.join(__dirname, "..", ARTIFACT_PATH);
 }
 
+const ARTIFACT_NAME = path.basename(absArtifactPath());
+
+function saleEnded(ts = now()) {
+  return ts >= SALE_END_TS;
+}
+
+function endedWindowActive(ts = now()) {
+  if (ENDED_WINDOW_SECONDS <= 0) return false;
+  return ts >= SALE_END_TS && ts < SALE_END_TS + ENDED_WINDOW_SECONDS;
+}
+
+function endedWindowCutoffTs() {
+  return SALE_END_TS + ENDED_WINDOW_SECONDS;
+}
+
+function baseUrlFromReq(req) {
+  if (isAbsoluteHttpUrl(PUBLIC_BASE_URL)) {
+    return PUBLIC_BASE_URL.replace(/\/+$/, "");
+  }
+  const host = req.get("host");
+  return `${req.protocol}://${host}`;
+}
+
+function promoModel(req) {
+  const baseUrl = baseUrlFromReq(req);
+  const promoUrl = `${baseUrl}/`;
+  const downloadUrl = `${baseUrl}/download`;
+  const imageUrl = isAbsoluteHttpUrl(OG_IMAGE_URL) ? OG_IMAGE_URL : `${baseUrl}/og.svg`;
+  const ogTitle = OG_TITLE || `${ARTIFACT_NAME} — paywalled download`;
+  const ogDescription =
+    OG_DESCRIPTION ||
+    `Pay ${PRICE_USD} on ${CHAIN_ID} to unlock ${ARTIFACT_NAME}. Access is time-limited and agent-assisted via /download.`;
+
+  return {
+    baseUrl,
+    promoUrl,
+    downloadUrl,
+    imageUrl,
+    ogTitle,
+    ogDescription,
+    saleStartTs: SALE_START_TS,
+    saleEndTs: SALE_END_TS,
+    endedWindowSeconds: ENDED_WINDOW_SECONDS,
+    endedWindowCutoffTs: endedWindowCutoffTs(),
+  };
+}
+
+function renderPromoPage(model, { ended }) {
+  const stateLabel = ended ? "Ended" : "Live";
+  const pageTitle = ended ? `${model.ogTitle} (ended)` : model.ogTitle;
+  const description = ended
+    ? `This leak has ended. ${model.ogDescription}`
+    : model.ogDescription;
+  const expiresIso = new Date(model.saleEndTs * 1000).toISOString();
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "DigitalDocument",
+    name: model.ogTitle,
+    description,
+    image: model.imageUrl,
+    downloadUrl: model.downloadUrl,
+    availabilityEnds: expiresIso,
+    paymentProtocol: "x402",
+  };
+
+  const examplePrompt = `Buy this with your agent and save it: ${model.downloadUrl}`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(pageTitle)}</title>
+  <meta name="description" content="${escapeHtml(description)}" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="${escapeHtml(model.promoUrl)}" />
+  <meta property="og:title" content="${escapeHtml(pageTitle)}" />
+  <meta property="og:description" content="${escapeHtml(description)}" />
+  <meta property="og:image" content="${escapeHtml(model.imageUrl)}" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${escapeHtml(pageTitle)}" />
+  <meta name="twitter:description" content="${escapeHtml(description)}" />
+  <meta name="twitter:image" content="${escapeHtml(model.imageUrl)}" />
+
+  <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 24px; background: #f7f7f5; color: #1f1f1f; }
+    .card { max-width: 760px; margin: 0 auto; border: 1px solid #d8d8d0; background: #fff; border-radius: 10px; padding: 20px; }
+    .state { display: inline-block; font-size: 12px; border: 1px solid #bbb; border-radius: 999px; padding: 2px 10px; margin-bottom: 12px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { line-height: 1.5; }
+    .kv { margin: 14px 0; font-size: 14px; color: #333; }
+    code, pre { background: #f0f0eb; border-radius: 6px; padding: 2px 6px; }
+    pre { padding: 10px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="state">${escapeHtml(stateLabel)}</div>
+    <h1>${escapeHtml(pageTitle)}</h1>
+    <p>${escapeHtml(description)}</p>
+    <p><strong>Agent-assisted purchase:</strong> this release is designed to be bought through an agent using the paywalled endpoint below.</p>
+
+    <div class="kv"><strong>Price:</strong> ${escapeHtml(PRICE_USD)} USD equivalent</div>
+    <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_ID)}</div>
+    <div class="kv"><strong>Sale end:</strong> ${escapeHtml(expiresIso)}</div>
+
+    <p><strong>Paywalled URL</strong><br /><code>${escapeHtml(model.downloadUrl)}</code></p>
+    <p><strong>Example agent prompt</strong></p>
+    <pre>${escapeHtml(examplePrompt)}</pre>
+  </main>
+</body>
+</html>`;
+}
+
+function renderOgSvg(req) {
+  const model = promoModel(req);
+  const title = model.ogTitle;
+  const subtitle = `Pay ${PRICE_USD} on ${CHAIN_ID}`;
+  const status = saleEnded() ? "ENDED" : "LIVE";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="${escapeXml(title)}">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f4ef"/>
+      <stop offset="100%" stop-color="#dfdfd4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="64" y="64" width="1072" height="502" rx="18" fill="#ffffff" stroke="#bdbdae"/>
+  <text x="96" y="170" font-size="32" font-family="monospace" fill="#222">${escapeXml(status)} LEAK</text>
+  <text x="96" y="250" font-size="52" font-family="monospace" fill="#111">${escapeXml(title)}</text>
+  <text x="96" y="330" font-size="30" font-family="monospace" fill="#333">${escapeXml(subtitle)}</text>
+  <text x="96" y="404" font-size="22" font-family="monospace" fill="#444">Agent-assisted purchase via /download</text>
+</svg>`;
+}
+
 // In-memory grants (v1). Later: SQLite.
 /** @type {Map<string, { token: string, expiresAt: number, downloadsLeft: number|null }>} */
 const GRANTS = new Map();
-
-function now() {
-  return Math.floor(Date.now() / 1000);
-}
 
 function pruneExpiredGrants() {
   const ts = now();
@@ -144,6 +327,14 @@ setInterval(() => {
 }, GRANT_SWEEP_SECONDS * 1000).unref();
 
 app.get("/", (req, res) => {
+  const model = promoModel(req);
+  const ended = saleEnded();
+  const status = ended ? 410 : 200;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  return res.status(status).send(renderPromoPage(model, { ended }));
+});
+
+app.get("/info", (req, res) => {
   res.json({
     name: "leak",
     artifact: path.basename(absArtifactPath()),
@@ -157,12 +348,22 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/og.svg", (req, res) => {
+  res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=60");
+  return res.status(200).send(renderOgSvg(req));
+});
+
 app.get("/health", (req, res) => {
   res.json({ ok: true, ts: now() });
 });
 
 // x402 gate for GET /download (supports PAYMENT-SIGNATURE and legacy X-PAYMENT by aliasing)
 app.use("/download", async (req, res, next) => {
+  if (saleEnded()) {
+    return res.status(410).json({ error: "leak ended" });
+  }
+
   // If a valid token is supplied, skip x402 and let the handler serve the file.
   // (Matches the Python implementation: token check happens before payment requirement.)
   if (typeof req.query.token === "string" && req.query.token.length > 0) {
@@ -199,8 +400,7 @@ app.use("/download", async (req, res, next) => {
       return req.get("user-agent") || "";
     },
     getQueryParam(name) {
-      const v = req.query?.[name];
-      return v;
+      return req.query?.[name];
     },
   };
 
@@ -234,6 +434,10 @@ app.use("/download", async (req, res, next) => {
 });
 
 app.get("/download", async (req, res) => {
+  if (saleEnded()) {
+    return res.status(410).json({ error: "leak ended" });
+  }
+
   // 1) If caller already has a valid access token, serve the artifact.
   const token = typeof req.query.token === "string" ? req.query.token : undefined;
   if (token) {
@@ -290,7 +494,13 @@ app.get("/download", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`paywall-node listening on http://localhost:${PORT}`);
-  console.log(`info:    http://localhost:${PORT}/`);
+  console.log(`promo:   http://localhost:${PORT}/ (share this)`);
+  console.log(`info:    http://localhost:${PORT}/info`);
   console.log(`health:  http://localhost:${PORT}/health`);
   console.log(`download http://localhost:${PORT}/download (x402 protected)`);
+  if (endedWindowActive()) {
+    console.log(
+      `ended-window active until ${new Date(endedWindowCutoffTs() * 1000).toISOString()} (HTTP 410 mode)`,
+    );
+  }
 });
