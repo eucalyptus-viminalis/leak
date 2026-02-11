@@ -211,6 +211,18 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 
 ---
 
+## Versioning
+
+This package uses **CalVer** in `YYYY.M.P` format (example: `2026.2.11`).
+
+Release rules:
+- `YYYY` = year
+- `M` = month
+- `P` = release number within that month
+- Pre-release builds use semver-compatible tags, for example `2026.2.11-rc.1`.
+
+---
+
 ## Notes
 
 ### Legacy header support
