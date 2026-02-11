@@ -10,6 +10,8 @@
 ### install
 `npm i leak`
 
+OpenClaw skill docs live in this repo at [`/skills/leak`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak); Clawhub listing coming soon.
+
 ### join the discord
 
 ---

@@ -4,8 +4,17 @@
   "description": "leak: x402 download server (Express)",
   "type": "module",
   "main": "src/index.js",
+  "files": [
+    "src/",
+    "scripts/cli.js",
+    "scripts/leak.js",
+    "scripts/buy.js",
+    "README.md",
+    ".env.example",
+    "LICENSE"
+  ],
   "bin": {
-    "leak": "./scripts/cli.js"
+    "leak": "scripts/cli.js"
   },
   "scripts": {
     "start": "node src/index.js",
@@ -21,6 +30,14 @@
     "micropayments",
     "openclaw"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eucalyptus-viminalis/leak.git"
+  },
+  "homepage": "https://github.com/eucalyptus-viminalis/leak#readme",
+  "bugs": {
+    "url": "https://github.com/eucalyptus-viminalis/leak/issues"
+  },
   "license": "ISC",
   "dependencies": {
     "@coinbase/cdp-sdk": "^1.12.0",
