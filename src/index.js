@@ -77,7 +77,11 @@ const MIME_TYPE = process.env.PROTECTED_MIME || "application/octet-stream";
 const OG_TITLE = (process.env.OG_TITLE || "").trim();
 const OG_DESCRIPTION = (process.env.OG_DESCRIPTION || "").trim();
 const OG_IMAGE_URL = (process.env.OG_IMAGE_URL || "").trim();
+const OG_IMAGE_PATH_RAW = (process.env.OG_IMAGE_PATH || "").trim();
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim();
+const OG_IMAGE_PATH = OG_IMAGE_PATH_RAW
+  ? (path.isAbsolute(OG_IMAGE_PATH_RAW) ? OG_IMAGE_PATH_RAW : path.join(__dirname, "..", OG_IMAGE_PATH_RAW))
+  : "";
 
 const SALE_START_TS = parsePositiveInt(process.env.SALE_START_TS, now());
 const SALE_END_TS = parsePositiveInt(process.env.SALE_END_TS, SALE_START_TS + WINDOW_SECONDS);
@@ -119,12 +123,25 @@ function baseUrlFromReq(req) {
   return `${req.protocol}://${host}`;
 }
 
+function imageMimeTypeFromPath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".avif") return "image/avif";
+  return null;
+}
+
 function promoModel(req) {
   const baseUrl = baseUrlFromReq(req);
   const promoUrl = `${baseUrl}/`;
   const downloadUrl = `${baseUrl}/download`;
-  const imageUrl = isAbsoluteHttpUrl(OG_IMAGE_URL) ? OG_IMAGE_URL : `${baseUrl}/og.svg`;
-  const ogTitle = OG_TITLE || `${ARTIFACT_NAME} — paywalled download`;
+  const imageUrl = isAbsoluteHttpUrl(OG_IMAGE_URL)
+    ? OG_IMAGE_URL
+    : (OG_IMAGE_PATH ? `${baseUrl}/og-image` : `${baseUrl}/og.svg`);
+  const ogTitle = OG_TITLE || ARTIFACT_NAME;
   const ogDescription =
     OG_DESCRIPTION ||
     `Pay ${PRICE_USD} on ${CHAIN_ID} to unlock ${ARTIFACT_NAME}. Access is time-limited and agent-assisted via /download.`;
@@ -145,7 +162,7 @@ function promoModel(req) {
 
 function renderPromoPage(model, { ended }) {
   const stateLabel = ended ? "Ended" : "Live";
-  const pageTitle = ended ? `${model.ogTitle} (ended)` : model.ogTitle;
+  const pageTitle = model.ogTitle;
   const description = ended
     ? `This leak has ended. ${model.ogDescription}`
     : model.ogDescription;
@@ -161,7 +178,7 @@ function renderPromoPage(model, { ended }) {
     paymentProtocol: "x402",
   };
 
-  const examplePrompt = `Buy this with your agent and save it: ${model.downloadUrl}`;
+  const examplePrompt = `Buy this and save it: ${model.downloadUrl}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -193,6 +210,13 @@ function renderPromoPage(model, { ended }) {
     .kv { margin: 14px 0; font-size: 14px; color: #333; }
     code, pre { background: #f0f0eb; border-radius: 6px; padding: 2px 6px; }
     pre { padding: 10px; overflow-x: auto; }
+    .prompt-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .prompt-head p { margin: 0; }
+    button.copy-btn { border: 1px solid #bdbdae; background: #f5f5ef; color: #1f1f1f; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px; }
+    button.copy-btn:hover { background: #ecece4; }
+    .copy-status { font-size: 12px; color: #3f3f3f; min-height: 1em; }
+    .install-note { margin-top: 16px; font-size: 13px; color: #2f2f2f; }
+    .install-note a { color: #1f1f1f; }
   </style>
 </head>
 <body>
@@ -200,16 +224,66 @@ function renderPromoPage(model, { ended }) {
     <div class="state">${escapeHtml(stateLabel)}</div>
     <h1>${escapeHtml(pageTitle)}</h1>
     <p>${escapeHtml(description)}</p>
-    <p><strong>Agent-assisted purchase:</strong> this release is designed to be bought through an agent using the paywalled endpoint below.</p>
+    <p><strong>Agent-assisted purchase:</strong> this release is designed to be bought through an agent using the x402 endpoint below.</p>
 
     <div class="kv"><strong>Price:</strong> ${escapeHtml(PRICE_USD)} USD equivalent</div>
     <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_ID)}</div>
     <div class="kv"><strong>Sale end:</strong> ${escapeHtml(expiresIso)}</div>
 
-    <p><strong>Paywalled URL</strong><br /><code>${escapeHtml(model.downloadUrl)}</code></p>
-    <p><strong>Example agent prompt</strong></p>
-    <pre>${escapeHtml(examplePrompt)}</pre>
+    <p><strong>x402 URL</strong><br /><code>${escapeHtml(model.downloadUrl)}</code></p>
+    <div class="prompt-head">
+      <p><strong>Example agent prompt</strong></p>
+      <button class="copy-btn" id="copy-agent-prompt" type="button" aria-label="Copy example agent prompt">Copy prompt</button>
+      <span class="copy-status" id="copy-prompt-status" aria-live="polite"></span>
+    </div>
+    <pre id="example-agent-prompt">${escapeHtml(examplePrompt)}</pre>
+    <p class="install-note">
+      Need help setting this up? Install leak at
+      <a href="https://github.com/eucalyptus-viminalis/leak">github.com/eucalyptus-viminalis/leak</a>
+      or search for leak on clawhub.
+    </p>
   </main>
+  <script>
+    (() => {
+      const button = document.getElementById("copy-agent-prompt");
+      const pre = document.getElementById("example-agent-prompt");
+      const status = document.getElementById("copy-prompt-status");
+      if (!button || !pre) return;
+
+      const setStatus = (text) => {
+        if (status) status.textContent = text;
+      };
+
+      button.addEventListener("click", async () => {
+        const text = pre.textContent || "";
+        if (!text) return;
+        const original = "Copy prompt";
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.setAttribute("readonly", "");
+            ta.style.position = "absolute";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+          }
+          button.textContent = "Copied";
+          setStatus("Copied to clipboard.");
+          setTimeout(() => {
+            button.textContent = original;
+            setStatus("");
+          }, 1500);
+        } catch {
+          setStatus("Copy failed. Select and copy manually.");
+        }
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
@@ -233,7 +307,7 @@ function renderOgSvg(req) {
   <text x="96" y="170" font-size="32" font-family="monospace" fill="#222">${escapeXml(status)} LEAK</text>
   <text x="96" y="250" font-size="52" font-family="monospace" fill="#111">${escapeXml(title)}</text>
   <text x="96" y="330" font-size="30" font-family="monospace" fill="#333">${escapeXml(subtitle)}</text>
-  <text x="96" y="404" font-size="22" font-family="monospace" fill="#444">Agent-assisted purchase via /download</text>
+  <text x="96" y="404" font-size="22" font-family="monospace" fill="#444">x402 via /download</text>
 </svg>`;
 }
 
@@ -301,7 +375,7 @@ const routes = {
         maxTimeoutSeconds: WINDOW_SECONDS,
       },
     ],
-    description: "gpublic paywalled download",
+    description: "leak x402 download",
     mimeType: MIME_TYPE,
   },
 };
@@ -352,6 +426,42 @@ app.get("/og.svg", (req, res) => {
   res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=60");
   return res.status(200).send(renderOgSvg(req));
+});
+
+app.get("/og-image", (req, res) => {
+  if (!OG_IMAGE_PATH) {
+    return res.status(404).json({ error: "og image not configured" });
+  }
+  if (!fs.existsSync(OG_IMAGE_PATH)) {
+    return res.status(404).json({ error: "og image not found" });
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(OG_IMAGE_PATH);
+  } catch {
+    return res.status(404).json({ error: "og image unavailable" });
+  }
+  if (!stat.isFile()) {
+    return res.status(404).json({ error: "og image unavailable" });
+  }
+
+  const contentType = imageMimeTypeFromPath(OG_IMAGE_PATH);
+  if (!contentType) {
+    return res.status(404).json({ error: "og image unavailable" });
+  }
+
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "public, max-age=60");
+  const stream = fs.createReadStream(OG_IMAGE_PATH);
+  stream.on("error", () => {
+    if (!res.headersSent) {
+      res.status(404).json({ error: "og image unavailable" });
+    } else {
+      res.end();
+    }
+  });
+  return stream.pipe(res);
 });
 
 app.get("/health", (req, res) => {
@@ -493,7 +603,7 @@ app.get("/download", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`paywall-node listening on http://localhost:${PORT}`);
+  console.log(`x402-node listening on http://localhost:${PORT}`);
   console.log(`promo:   http://localhost:${PORT}/ (share this)`);
   console.log(`info:    http://localhost:${PORT}/info`);
   console.log(`health:  http://localhost:${PORT}/health`);

@@ -1,6 +1,6 @@
 # leak
 
-`leak` turns a file on your machine into a paywalled release link. Share `/` as the promo page (social-card friendly), and let agents purchase through `/download` using x402 with time-limited access.
+`leak` turns a file on your machine into an x402 release link. Share `/` as the promo page (social-card friendly), and let agents purchase through `/download` using x402 with time-limited access.
 
 ## Leak CLI (recommended)
 
@@ -34,7 +34,7 @@ Optional flags:
 - `--public` (start a temporary Cloudflare Tunnel and print a public URL; requires `cloudflared`)
 - `--og-title "My Drop"`
 - `--og-description "Agent-assisted purchase"`
-- `--og-image-url https://...` (absolute `http(s)` URL)
+- `--og-image-url https://...` (absolute `http(s)` URL) or `--og-image-url ./cover.png` (local image path)
 - `--ended-window-seconds 86400` (keep ended promo page online before auto-stop)
 - `--network eip155:84532`
 - `--pay-to 0x...`
@@ -62,7 +62,7 @@ If you don't need a public URL, run without `--public` for local-only mode.
 When using `--public`, share the **promo URL** (`/`) in your tweet.
 
 - `https://<tunnel>/` → promo page with OG/Twitter card metadata
-- `https://<tunnel>/download` → paywalled x402 endpoint for agents
+- `https://<tunnel>/download` → x402 endpoint for agents
 
 Example:
 
@@ -70,10 +70,12 @@ Example:
 npm run leak -- --file ./song.mp3 --pay-to 0x... --price 1 --window 1h --public \
   --og-title "New Single: Nightwire" \
   --og-description "Limited release. Agent-assisted purchase." \
-  --og-image-url https://cdn.example.com/nightwire-cover.jpg
+  --og-image-url ./nightwire-cover.jpg
 ```
 
-This mirrors the behavior of the Python scaffold in `~/paywall/paywall/server.py`:
+When a local image path is used for `--og-image-url`, leak serves it from `/og-image` and points OG/Twitter metadata at that endpoint.
+
+This mirrors the behavior of the original Python scaffold implementation:
 
 - `GET /download` without payment → **402** with `PAYMENT-REQUIRED` header
 - `GET /download` with valid payment headers → returns a **time-limited token** JSON
@@ -211,6 +213,7 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
   - `200` while sale is active
   - `410` once sale has ended
 - `GET /info` machine-readable JSON status (compat endpoint)
+- `GET /og-image` configured OG image file (when using local `--og-image-url` path)
 - `GET /og.svg` fallback OG image (used when `--og-image-url` is not set)
 - `GET /health` free health check
 - `GET /download` x402-protected download endpoint
@@ -243,6 +246,7 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 - `OG_TITLE` optional card/page title (or use `--og-title`)
 - `OG_DESCRIPTION` optional card/page description (or use `--og-description`)
 - `OG_IMAGE_URL` optional absolute `http(s)` card image URL (or use `--og-image-url`)
+- `OG_IMAGE_PATH` optional local card image file path (set automatically by launcher when using local `--og-image-url`)
 - `PUBLIC_BASE_URL` optional absolute base URL for metadata canonicalization
 
 ---

@@ -13,8 +13,8 @@ const SERVER_ENTRY = path.resolve(__dirname, "..", "src", "index.js");
 
 function usageAndExit(code = 1, hint = "") {
   if (hint) console.error(`Hint: ${hint}\n`);
-  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...>] [--ended-window-seconds <seconds>]`);
-  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...>] [--ended-window-seconds <seconds>]`);
+  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
+  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
   console.log(``);
   console.log(`Notes:`);
   console.log(`  --public requires cloudflared (Cloudflare Tunnel) installed.`);
@@ -22,6 +22,7 @@ function usageAndExit(code = 1, hint = "") {
   console.log(`  leak --file ./vape.jpg`);
   console.log(`  leak --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
   console.log(`  leak --file ./vape.jpg --public --og-title "My New Drop" --og-description "Agent-assisted purchase"`);
+  console.log(`  leak --file ./vape.jpg --public --og-image-url ./cover.png`);
   console.log(`  npm run leak -- --file ./vape.jpg`);
   console.log(`  npm run leak -- --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
   process.exit(code);
@@ -71,6 +72,41 @@ function isAbsoluteHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+const SUPPORTED_OG_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"]);
+
+function resolveOgImageInput(value) {
+  if (!value) return { ogImageUrl: "", ogImagePath: "" };
+  const raw = String(value).trim();
+  if (!raw) return { ogImageUrl: "", ogImagePath: "" };
+
+  if (isAbsoluteHttpUrl(raw)) {
+    return { ogImageUrl: raw, ogImagePath: "" };
+  }
+
+  const localPath = resolveFile(raw);
+  if (!fs.existsSync(localPath)) {
+    throw new Error("Invalid --og-image-url (must be an absolute http(s) URL or a valid local image file path)");
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(localPath);
+  } catch {
+    throw new Error("Invalid --og-image-url (must be an absolute http(s) URL or a valid local image file path)");
+  }
+
+  if (!stat.isFile()) {
+    throw new Error("Invalid --og-image-url (must be an absolute http(s) URL or a valid local image file path)");
+  }
+
+  const ext = path.extname(localPath).toLowerCase();
+  if (!SUPPORTED_OG_IMAGE_EXTENSIONS.has(ext)) {
+    throw new Error("Invalid --og-image-url (must be an absolute http(s) URL or a valid local image file path)");
+  }
+
+  return { ogImageUrl: "", ogImagePath: localPath };
 }
 
 function cloudflaredPreflight() {
@@ -189,7 +225,7 @@ async function main() {
   const confirmationPolicy = args.confirmed ? "confirmed" : (process.env.CONFIRMATION_POLICY || "confirmed");
   const ogTitle = typeof args["og-title"] === "string" ? args["og-title"] : process.env.OG_TITLE;
   const ogDescription = typeof args["og-description"] === "string" ? args["og-description"] : process.env.OG_DESCRIPTION;
-  const ogImageUrl = typeof args["og-image-url"] === "string" ? args["og-image-url"] : process.env.OG_IMAGE_URL;
+  const ogImageInput = typeof args["og-image-url"] === "string" ? args["og-image-url"] : process.env.OG_IMAGE_URL;
   const endedWindowArg = args["ended-window-seconds"] ?? process.env.ENDED_WINDOW_SECONDS;
   const defaultEndedWindowSeconds = args.public ? 86400 : 0;
   const endedWindowSeconds = parseNonNegativeInt(endedWindowArg);
@@ -205,8 +241,11 @@ async function main() {
     process.exit(1);
   }
 
-  if (ogImageUrl && !isAbsoluteHttpUrl(ogImageUrl)) {
-    console.error("Invalid --og-image-url (must be an absolute http:// or https:// URL)");
+  let ogImageResolved;
+  try {
+    ogImageResolved = resolveOgImageInput(ogImageInput);
+  } catch (err) {
+    console.error(err.message || String(err));
     process.exit(1);
   }
 
@@ -227,7 +266,8 @@ async function main() {
     ARTIFACT_PATH: artifactPath,
     OG_TITLE: ogTitle || "",
     OG_DESCRIPTION: ogDescription || "",
-    OG_IMAGE_URL: ogImageUrl || "",
+    OG_IMAGE_URL: ogImageResolved.ogImageUrl || "",
+    OG_IMAGE_PATH: ogImageResolved.ogImagePath || "",
     SALE_START_TS: String(saleStartTs),
     SALE_END_TS: String(saleEndTs),
     ENDED_WINDOW_SECONDS: String(effectiveEndedWindowSeconds),
@@ -243,7 +283,8 @@ async function main() {
   console.log(`- mode:   ${confirmationPolicy}`);
   if (ogTitle) console.log(`- og_title: ${ogTitle}`);
   if (ogDescription) console.log(`- og_description: ${ogDescription}`);
-  if (ogImageUrl) console.log(`- og_image_url: ${ogImageUrl}`);
+  if (ogImageResolved.ogImageUrl) console.log(`- og_image_url: ${ogImageResolved.ogImageUrl}`);
+  if (ogImageResolved.ogImagePath) console.log(`- og_image_path: ${ogImageResolved.ogImagePath}`);
   console.log(`- ended_window: ${effectiveEndedWindowSeconds}s`);
 
   if (args.public) {
