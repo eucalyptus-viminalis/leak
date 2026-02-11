@@ -2,7 +2,7 @@
 
 > `there is no platform\n<beautiful_milady.jpg>\ni love you`
 
-`leak` is a content exchange starter pack aimed at people that hate 🥴 subscriptions 😴 and 🌈 corporations 🌈. "bro just give up already it's 2026" well ackshually I think it's quite inevitable (see: >charts<). If you have (eyes and/or ears) OR (want money and/or create interesting little files on computah), try `leak`:
+`leak` is a content exchange starter pack aimed at people that hate 🥴 subscriptions 😴 and 🌈 corporations 🌈. "bro just give up already it's 2026" -- well ackshually I think it's quite inevitable (see: charts). Convinced? If you have (eyes and/or ears) OR (want money and/or create interesting little files on computah), try `leak` today.
 
 ### agent prompt 
 `Hey, what's leak? Keep it concise. https://github.com/eucalyptus-viminalis/leak`
