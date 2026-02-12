@@ -20,6 +20,28 @@ Command: `leak`
 
 OpenClaw skill docs live in this repo at [`/skills/leak`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak); Clawhub listing coming soon.
 
+### Config
+
+```bash
+leak config
+```
+
+Configure defaults to avoid managing multiple flags when using leak subcommands.
+
+Once `leak` is configured, commands become very simple to use:
+
+**Selling**:
+
+```bash
+leak --file protected/asset.bin --public
+```
+
+**Buying**:
+
+```bash
+leak buy <buy_link> --buyer-private-key <private_key>
+```
+
 ### Seller Quickstart 1: Local testnet sale (fastest path)
 
 Goal: run a local sale and verify the x402 flow end to end.
