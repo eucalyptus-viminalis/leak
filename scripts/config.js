@@ -92,6 +92,7 @@ function printShow() {
   }
   if (!loaded.exists) {
     console.log(`No leak config found at ${loaded.path}`);
+    console.log("Run `leak config` to initialize your config file.");
     return;
   }
 
