@@ -33,7 +33,7 @@ Once `leak` is configured, commands become very simple to use:
 **Selling**:
 
 ```bash
-leak --file protected/asset.bin --public
+leak --file ./your-file.bin --public
 ```
 
 **Buying**:
@@ -115,11 +115,6 @@ Required:
 
 Reference: see [Testnet vs Mainnet facilitator setup](#testnet-vs-mainnet-facilitator-setup) below.
 
-### agent prompt 
-`Hey, what's leak? Keep it concise. https://github.com/eucalyptus-viminalis/leak`
-
-### join the discord
-
 ---
 
 ## User Archetypes
@@ -137,12 +132,12 @@ Reference: see [Testnet vs Mainnet facilitator setup](#testnet-vs-mainnet-facili
   - skip the bad 🤓 guys 😤
   - NO MORE SUBSCRIPTIONS PLEASE (hehe)
   - platform resi-. there is not platform, i love you.
-- `i be in my happy place, offline, listening to demo 45 and noone can stop me`
 
 **U MAD?**:
 - Spotify
 - OnlyFans
-- then we branch out to more niche, controversial industries
+- BandCamp
+- SoundCloud
 
 ## Leak CLI (recommended)
 
