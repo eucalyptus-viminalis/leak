@@ -6,6 +6,7 @@ import path from "node:path";
 import { x402Client } from "@x402/core/client";
 import {
   decodePaymentRequiredHeader,
+  decodePaymentResponseHeader,
   encodePaymentSignatureHeader,
 } from "@x402/core/http";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
@@ -79,6 +80,13 @@ function sanitizeFilename(name) {
   return base.replace(/[\u0000-\u001f\u007f]/g, "_");
 }
 
+function explorerTxUrl(network, transaction) {
+  if (!network || !transaction) return null;
+  if (network === "eip155:8453") return `https://basescan.org/tx/${transaction}`;
+  if (network === "eip155:84532") return `https://sepolia.basescan.org/tx/${transaction}`;
+  return null;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const downloadUrl = args._[0];
@@ -122,6 +130,23 @@ async function main() {
   if (!r2.ok) {
     const text = await r2.text().catch(() => "");
     throw new Error(`Payment failed ${r2.status}: ${text}`);
+  }
+
+  const paymentResponseHeader =
+    getHeaderCaseInsensitive(r2.headers, "PAYMENT-RESPONSE")
+    || getHeaderCaseInsensitive(r2.headers, "X-PAYMENT-RESPONSE");
+  if (paymentResponseHeader) {
+    try {
+      const receipt = decodePaymentResponseHeader(paymentResponseHeader);
+      const explorer = explorerTxUrl(receipt.network, receipt.transaction);
+      console.log("Payment receipt:");
+      console.log(`- network: ${receipt.network}`);
+      if (receipt.payer) console.log(`- payer:   ${receipt.payer}`);
+      console.log(`- tx:      ${receipt.transaction}`);
+      if (explorer) console.log(`- explorer: ${explorer}`);
+    } catch (err) {
+      console.error(`[buy] warning: could not decode PAYMENT-RESPONSE header (${err.message || String(err)})`);
+    }
   }
 
   const data = await r2.json();

@@ -58,6 +58,7 @@ Use the output URLs like this:
 - share `https://<tunnel>/` as your promo URL (optimized for OpenGraph metadata on feeds and chats)
 - agents will use `https://<tunnel>/download` to buy (x402-protected link)
 - open the promo URL in a browser and confirm title, description, and image render correctly for social cards
+- while the tunnel is still running, run the Buyer section below to validate payment + download end-to-end
 
 ### Buyer Skeleton (pre-Clawhub)
 
@@ -68,6 +69,7 @@ leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xYOUR_BU
 ```
 
 By default, the file is saved to your current directory using the server-provided filename; use `--out` or `--basename` to control naming.
+When settlement metadata is returned, `leak buy` also prints a receipt block with network + transaction hash (and Basescan link on Base networks).
 
 Security note: use a dedicated buyer key with limited funds.
 
@@ -157,6 +159,37 @@ Optional flags:
 - `--network eip155:84532`
 - `--pay-to 0x...`
 - `--port 4021`
+
+### Persistent config (`leak config`)
+
+To avoid passing the same seller/facilitator flags every run, configure defaults once:
+
+```bash
+leak config
+```
+
+Inspect saved values (secrets redacted):
+
+```bash
+leak config show
+```
+
+Optionally scaffold a project `.env` from saved defaults:
+
+```bash
+leak config --write-env
+```
+
+Config file location:
+- `~/.leak/config.json`
+
+Precedence for launch values:
+- CLI flags
+- environment variables
+- `~/.leak/config.json`
+- built-in defaults
+
+Manual editing is supported. Keep `CDP_API_KEY_SECRET` private and avoid committing generated `.env` files.
 
 ### Install `cloudflared` for `--public`
 
@@ -318,6 +351,8 @@ There is now a proper buyer CLI that takes the link directly (no `BASE_URL` env)
 ```bash
 leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x...
 ```
+
+When available, it prints payment receipt metadata including transaction hash and network before saving the file.
 
 Optional save naming:
 - `--out ./some/path.ext`

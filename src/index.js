@@ -518,7 +518,7 @@ const routes = {
         maxTimeoutSeconds: WINDOW_SECONDS,
       },
     ],
-    description: "leak x402 download",
+    description: ARTIFACT_NAME,
     mimeType: MIME_TYPE,
   },
 };

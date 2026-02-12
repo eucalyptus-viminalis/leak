@@ -9,6 +9,8 @@
     "scripts/cli.js",
     "scripts/leak.js",
     "scripts/buy.js",
+    "scripts/config.js",
+    "scripts/config_store.js",
     "README.md",
     ".env.example",
     "LICENSE"

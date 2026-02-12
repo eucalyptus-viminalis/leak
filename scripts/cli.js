@@ -32,6 +32,9 @@ if (!sub || sub === "--help" || sub === "-h") {
   console.log("Usage:");
   console.log("  leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]");
   console.log("  leak buy <download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]");
+  console.log("  leak config");
+  console.log("  leak config show");
+  console.log("  leak config --write-env");
   console.log("");
   console.log("Notes:");
   console.log("  share / as promo (social card), use /download for agent-assisted purchase.");
@@ -44,6 +47,8 @@ if (sub === "leak") {
   runSubcommand("leak.js", process.argv.slice(3));
 } else if (sub === "buy") {
   runSubcommand("buy.js", process.argv.slice(3));
+} else if (sub === "config") {
+  runSubcommand("config.js", process.argv.slice(3));
 } else {
   // Default command: treat all args as leak-server args.
   runSubcommand("leak.js", process.argv.slice(2));

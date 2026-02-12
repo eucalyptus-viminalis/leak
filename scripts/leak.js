@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { spawn, spawnSync } from "node:child_process";
+import { defaultFacilitatorUrlForMode, readConfig } from "./config_store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -194,6 +195,11 @@ async function promptMissing({ price, windowSeconds }) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const storedConfig = readConfig();
+  if (storedConfig.error) {
+    console.error(`[leak] warning: ${storedConfig.error}`);
+  }
+  const configDefaults = storedConfig.config.defaults || {};
 
   const fileArg = args.file;
   if (!fileArg) {
@@ -213,25 +219,43 @@ async function main() {
     process.exit(1);
   }
 
-  const payTo = args["pay-to"] || process.env.SELLER_PAY_TO;
+  const payTo = args["pay-to"] || process.env.SELLER_PAY_TO || configDefaults.sellerPayTo;
   if (!payTo) {
-    console.error("Missing --pay-to or SELLER_PAY_TO in env");
+    console.error("Missing --pay-to, SELLER_PAY_TO in env, or sellerPayTo in ~/.leak/config.json");
     process.exit(1);
   }
 
-  const network = args.network || process.env.CHAIN_ID || "eip155:84532";
-  const port = Number(args.port || process.env.PORT || 4021);
+  const network = args.network || process.env.CHAIN_ID || configDefaults.chainId || "eip155:84532";
+  const port = Number(args.port || process.env.PORT || configDefaults.port || 4021);
+  const facilitatorMode = (
+    process.env.FACILITATOR_MODE || configDefaults.facilitatorMode || "testnet"
+  ).trim();
+  const facilitatorUrl = (
+    process.env.FACILITATOR_URL
+    || configDefaults.facilitatorUrl
+    || defaultFacilitatorUrlForMode(facilitatorMode)
+  ).trim();
+  const cdpApiKeyId = process.env.CDP_API_KEY_ID || configDefaults.cdpApiKeyId || "";
+  const cdpApiKeySecret = process.env.CDP_API_KEY_SECRET || configDefaults.cdpApiKeySecret || "";
 
-  const confirmationPolicy = args.confirmed ? "confirmed" : (process.env.CONFIRMATION_POLICY || "confirmed");
-  const ogTitle = typeof args["og-title"] === "string" ? args["og-title"] : process.env.OG_TITLE;
-  const ogDescription = typeof args["og-description"] === "string" ? args["og-description"] : process.env.OG_DESCRIPTION;
-  const ogImageInput = typeof args["og-image-url"] === "string" ? args["og-image-url"] : process.env.OG_IMAGE_URL;
-  const endedWindowArg = args["ended-window-seconds"] ?? process.env.ENDED_WINDOW_SECONDS;
+  const confirmationPolicy = args.confirmed
+    ? "confirmed"
+    : (process.env.CONFIRMATION_POLICY || configDefaults.confirmationPolicy || "confirmed");
+  const ogTitle = typeof args["og-title"] === "string"
+    ? args["og-title"]
+    : (process.env.OG_TITLE || configDefaults.ogTitle);
+  const ogDescription = typeof args["og-description"] === "string"
+    ? args["og-description"]
+    : (process.env.OG_DESCRIPTION || configDefaults.ogDescription);
+  const ogImageInput = typeof args["og-image-url"] === "string"
+    ? args["og-image-url"]
+    : process.env.OG_IMAGE_URL;
+  const endedWindowArg = args["ended-window-seconds"] ?? process.env.ENDED_WINDOW_SECONDS ?? configDefaults.endedWindowSeconds;
   const defaultEndedWindowSeconds = args.public ? 86400 : 0;
   const endedWindowSeconds = parseNonNegativeInt(endedWindowArg);
 
-  const price = args.price || process.env.PRICE_USD; // we keep env name for compatibility
-  const windowRaw = args.window || process.env.WINDOW_SECONDS;
+  const price = args.price || process.env.PRICE_USD || configDefaults.priceUsd; // we keep env name for compatibility
+  const windowRaw = args.window || process.env.WINDOW_SECONDS || configDefaults.window;
   const windowSeconds = typeof windowRaw === "string" ? parseDurationToSeconds(windowRaw) : Number(windowRaw);
 
   const prompted = await promptMissing({ price, windowSeconds: windowSeconds || null });
@@ -261,6 +285,10 @@ async function main() {
     SELLER_PAY_TO: payTo,
     PRICE_USD: String(prompted.price),
     CHAIN_ID: String(network),
+    FACILITATOR_MODE: facilitatorMode,
+    FACILITATOR_URL: facilitatorUrl,
+    CDP_API_KEY_ID: cdpApiKeyId,
+    CDP_API_KEY_SECRET: cdpApiKeySecret,
     WINDOW_SECONDS: String(prompted.windowSeconds),
     CONFIRMATION_POLICY: confirmationPolicy,
     ARTIFACT_PATH: artifactPath,
@@ -281,6 +309,8 @@ async function main() {
   console.log(`- to:     ${payTo}`);
   console.log(`- net:    ${network}`);
   console.log(`- mode:   ${confirmationPolicy}`);
+  console.log(`- facilitator_mode: ${facilitatorMode}`);
+  console.log(`- facilitator_url:  ${facilitatorUrl}`);
   if (ogTitle) console.log(`- og_title: ${ogTitle}`);
   if (ogDescription) console.log(`- og_description: ${ogDescription}`);
   if (ogImageResolved.ogImageUrl) console.log(`- og_image_url: ${ogImageResolved.ogImageUrl}`);
