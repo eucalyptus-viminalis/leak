@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_SSH="git@github.com:eucalyptus-viminalis/leak.git"
+REPO_URL="${LEAK_REPO_URL:-https://github.com/eucalyptus-viminalis/leak.git}"
 INSTALL_DIR="$HOME/leak"
 
 if command -v leak >/dev/null 2>&1; then
@@ -18,14 +18,14 @@ if npm install -g leak-cli; then
     leak --help >/dev/null 2>&1 || true
     exit 0
   fi
-  echo "[leak-skill] npm install succeeded but 'leak' is not on PATH yet; continuing with fallback."
+  echo "[leak-skill] npm install succeeded but 'leak' is not on PATH yet; continuing with HTTPS clone + npm link fallback."
 else
-  echo "[leak-skill] npm global install failed; falling back to repo clone + npm link."
+  echo "[leak-skill] npm global install failed; falling back to HTTPS repo clone + npm link."
 fi
 
 if [ ! -d "$INSTALL_DIR" ]; then
   echo "[leak-skill] cloning into $INSTALL_DIR"
-  git clone "$REPO_SSH" "$INSTALL_DIR"
+  git clone "$REPO_URL" "$INSTALL_DIR"
 else
   echo "[leak-skill] found existing repo at $INSTALL_DIR"
 fi
@@ -54,4 +54,9 @@ echo "[leak-skill] global npm bin: $NPM_BIN_GLOBAL"
 echo "[leak-skill] If 'leak' is still not found in a new shell, add this to your shell config:"
 echo "  export PATH=\"$NPM_BIN_GLOBAL:\$PATH\""
 
-command -v leak || true
+if command -v leak >/dev/null 2>&1; then
+  command -v leak
+else
+  echo "[leak-skill] leak is still not on PATH."
+  echo "[leak-skill] You can still run one-off commands with: npx -y leak-cli --help"
+fi

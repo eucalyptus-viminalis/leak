@@ -17,11 +17,33 @@ bash "$SCRIPT_DIR/ensure_leak.sh" >/dev/null || true
 NPM_PREFIX_GLOBAL="$(npm prefix -g)"
 export PATH="$NPM_PREFIX_GLOBAL/bin:$PATH"
 
-if ! command -v leak >/dev/null 2>&1; then
-  echo "[leak-skill] ERROR: leak not found on PATH even after ensure."
-  echo "[leak-skill] Try opening a new shell or add: export PATH=\"$NPM_PREFIX_GLOBAL/bin:\$PATH\""
+run_leak() {
+  if command -v leak >/dev/null 2>&1; then
+    leak "$@"
+    return
+  fi
+  if command -v npx >/dev/null 2>&1; then
+    npx -y leak-cli "$@"
+    return
+  fi
+  echo "[leak-skill] ERROR: leak not found on PATH and npx is unavailable."
+  echo "[leak-skill] Run: bash skills/leak/scripts/ensure_leak.sh"
+  echo "[leak-skill] Or install Node/npm and retry with npx fallback."
   exit 1
-fi
+}
+
+exec_leak() {
+  if command -v leak >/dev/null 2>&1; then
+    exec leak "$@"
+  fi
+  if command -v npx >/dev/null 2>&1; then
+    exec npx -y leak-cli "$@"
+  fi
+  echo "[leak-skill] ERROR: leak not found on PATH and npx is unavailable."
+  echo "[leak-skill] Run: bash skills/leak/scripts/ensure_leak.sh"
+  echo "[leak-skill] Or install Node/npm and retry with npx fallback."
+  exit 1
+}
 
 # Run from repo root so relative paths behave like the README examples.
 cd "$REPO_DIR"
@@ -56,7 +78,7 @@ ARGS+=("$@")
 if printf '%s\n' "$@" | grep -q -- '--public'; then
   TMP="$(mktemp)"
   set +e
-  leak "${ARGS[@]}" 2>&1 | tee "$TMP"
+  run_leak "${ARGS[@]}" 2>&1 | tee "$TMP"
   CODE=${PIPESTATUS[0]}
   set -e
 
@@ -74,5 +96,5 @@ else
   echo "[leak-skill] Starting leak server (no public tunnel)."
   echo "[leak-skill] Local share link (same machine): http://127.0.0.1:${PORT}/download"
   echo "[leak-skill] Tip: to expose publicly, re-run with --public (requires cloudflared)."
-  exec leak "${ARGS[@]}"
+  exec_leak "${ARGS[@]}"
 fi

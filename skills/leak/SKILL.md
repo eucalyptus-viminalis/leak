@@ -1,6 +1,6 @@
 ---
 name: leak
-description: Create and consume x402 download links using the leak CLI/server. Use when the user asks to “leak this file”, “x402-protect this download”, “start a paid download link”, “make an x402 402-protected download”, or to “buy/download a leak link”.
+description: Create and consume x402 download links using the leak CLI/server. Use when the user asks to “leak this file”, “release/publish a file with x402”, “start a paid download link”, "setup a store for this", “make an x402-protected download link”, "buy/download/save a leak", or to “buy/download/save a leaked link”.
 ---
 
 # leak (x402 downloads)
@@ -18,7 +18,7 @@ Prefer the `leak` CLI on PATH. If missing, install it globally from npm first:
 npm i -g leak-cli
 ```
 
-If that fails or you need a dev checkout, use the GitHub clone + `npm link` fallback:
+If that fails or you need a dev checkout, use the `ensure_leak.sh` fallback:
 
 Run:
 
@@ -28,7 +28,9 @@ bash skills/leak/scripts/ensure_leak.sh
 
 Notes:
 - Tries `npm i -g leak-cli` first.
-- Fallback installs into `~/leak` (clones if missing), then runs `npm install` and `npm link`.
+- Fallback installs into `~/leak` (clones if missing over HTTPS), then runs `npm install` and `npm link`.
+- Clone source can be overridden with `LEAK_REPO_URL=...`.
+- Helper scripts run `leak` when available, otherwise they fall back to `npx -y leak-cli`.
 
 ## Publish an x402 download (server)
 
@@ -138,6 +140,6 @@ leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --b
 
 ## Troubleshooting
 
-- **`leak: command not found`** → run `bash skills/leak/scripts/ensure_leak.sh`.
+- **`leak: command not found`** → run `bash skills/leak/scripts/ensure_leak.sh` or use `npx -y leak-cli --help` for one-off commands.
 - **`--public` tunnel fails** → install `cloudflared` (`brew install cloudflared` on macOS), then retry.
 - **Port in use** → add `--port 4021` with a different number and use that port in the tunnel.

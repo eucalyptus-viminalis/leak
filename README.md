@@ -82,9 +82,9 @@ Use the output URLs like this:
 - open the promo URL in a browser and confirm title, description, and image render correctly for social cards
 - while the tunnel is still running, run the Buyer section below to validate payment + download end-to-end
 
-### Buyer Skeleton (pre-Clawhub)
+### Buyer Skeleton (direct CLI)
 
-Use the direct CLI buy flow for now.
+Use the direct CLI buy flow:
 
 ```bash
 leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xYOUR_BUYER_KEY
@@ -95,13 +95,14 @@ When settlement metadata is returned, `leak buy` also prints a receipt block wit
 
 Security note: use a dedicated buyer key with limited funds.
 
-### Buyer Skeleton (post-Clawhub, placeholder)
+### Buyer Skeleton (Clawhub skill flow)
 
-To be finalized after Clawhub skill publish.
-
-- install the leak skill from Clawhub
+- install the `leak` skill from Clawhub
 - give your agent the `/download` URL
-- let the agent handle payment and save flow through the skill
+- provide a funded buyer key when prompted
+- let the agent complete payment + download through the skill
+
+Under the hood, the skill scripts try `leak` on PATH first and automatically fall back to `npx -y leak-cli` for one-off usage if needed.
 
 ### Next: Mainnet checklist (optional)
 

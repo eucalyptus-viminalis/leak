@@ -20,11 +20,18 @@ bash "$SCRIPT_DIR/ensure_leak.sh" >/dev/null || true
 NPM_PREFIX_GLOBAL="$(npm prefix -g)"
 export PATH="$NPM_PREFIX_GLOBAL/bin:$PATH"
 
-if ! command -v leak >/dev/null 2>&1; then
-  echo "[leak-skill] ERROR: leak not found on PATH even after ensure."
-  echo "[leak-skill] Try opening a new shell or add: export PATH=\"$NPM_PREFIX_GLOBAL/bin:\$PATH\""
+run_leak() {
+  if command -v leak >/dev/null 2>&1; then
+    exec leak "$@"
+  fi
+  if command -v npx >/dev/null 2>&1; then
+    exec npx -y leak-cli "$@"
+  fi
+  echo "[leak-skill] ERROR: leak not found on PATH and npx is unavailable."
+  echo "[leak-skill] Run: bash skills/leak/scripts/ensure_leak.sh"
+  echo "[leak-skill] Or install Node/npm and retry with npx fallback."
   exit 1
-fi
+}
 
 if [ "$#" -lt 1 ]; then
   echo "Usage: bash skills/leak/scripts/buy.sh <download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]"
@@ -34,4 +41,4 @@ fi
 DOWNLOAD_URL="$1"
 shift
 
-exec leak buy "$DOWNLOAD_URL" "$@"
+run_leak buy "$DOWNLOAD_URL" "$@"
