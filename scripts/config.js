@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import enquirer from "enquirer";
+const { Select } = enquirer;
 
 import {
   defaultFacilitatorUrlForMode,
@@ -85,6 +87,40 @@ async function askWithDefault(rl, label, currentValue = "") {
   return answer || current;
 }
 
+async function askOgField(label, currentValue, fieldType) {
+  const current = String(currentValue || "").trim();
+  const defaultText = fieldType === 'title'
+    ? 'filename (recommended)'
+    : 'auto-generated description';
+
+  if (!current) {
+    // No existing value - simple prompt
+    const answer = (await rl.question(`${label} [blank to use ${defaultText}]: `)).trim();
+    return answer;
+  }
+
+  // Has existing value - use interactive select
+  const prompt = new Select({
+    name: label,
+    message: `${label} (current: "${current}")`,
+    choices: [
+      { name: 'keep', message: `Keep: "${current}"` },
+      { name: 'clear', message: `Clear → use ${defaultText}` },
+      { name: 'new', message: 'Enter new value' }
+    ],
+    initial: 0
+  });
+
+  const choice = await prompt.run();
+
+  if (choice === 'keep') return current;
+  if (choice === 'clear') return '';
+  if (choice === 'new') {
+    const answer = (await rl.question(`New ${label}: `)).trim();
+    return answer;
+  }
+}
+
 function printShow() {
   const loaded = readConfig();
   if (loaded.error) {
@@ -131,6 +167,10 @@ function buildEnvScaffold(defaults) {
     "# Artifact to serve",
     "ARTIFACT_PATH=./protected/asset.bin",
     "PROTECTED_MIME=application/octet-stream",
+    "",
+    "# OpenGraph metadata (optional - leave blank to use filename as title)",
+    "# OG_TITLE=",
+    "# OG_DESCRIPTION=",
     "",
   ];
 
@@ -265,12 +305,8 @@ async function runWizard({ writeEnv }) {
       endedWindowSeconds = parseNonNegativeInt(endedWindowRaw);
     }
 
-    const ogTitle = await askWithDefault(rl, "OG_TITLE (optional)", existing.ogTitle || "");
-    const ogDescription = await askWithDefault(
-      rl,
-      "OG_DESCRIPTION (optional)",
-      existing.ogDescription || "",
-    );
+    const ogTitle = await askOgField("OG_TITLE", existing.ogTitle, 'title');
+    const ogDescription = await askOgField("OG_DESCRIPTION", existing.ogDescription, 'description');
 
     const defaults = {
       sellerPayTo,
