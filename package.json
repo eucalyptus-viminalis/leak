@@ -1,6 +1,6 @@
 {
   "name": "leak-cli",
-  "version": "2026.2.11",
+  "version": "2026.2.14",
   "description": "Self-hosted pop-up stores for creators -- with agent-friendly automation built in",
   "type": "module",
   "main": "src/index.js",
