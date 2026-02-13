@@ -5,6 +5,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import enquirer from "enquirer";
+import { isAddress } from "viem";
 const { Select } = enquirer;
 
 import {
@@ -87,7 +88,7 @@ async function askWithDefault(rl, label, currentValue = "") {
   return answer || current;
 }
 
-async function askOgField(label, currentValue, fieldType) {
+async function askOgField(rl, label, currentValue, fieldType) {
   const current = String(currentValue || "").trim();
   const defaultText = fieldType === 'title'
     ? 'filename (recommended)'
@@ -199,11 +200,22 @@ async function runWizard({ writeEnv }) {
   const rl = readline.createInterface({ input, output });
 
   try {
-    const sellerPayTo = await askWithDefault(
+    let sellerPayTo = await askWithDefault(
       rl,
       "SELLER_PAY_TO (seller payout address)",
       existing.sellerPayTo || "",
     );
+    while (true) {
+      sellerPayTo = String(sellerPayTo || "").trim();
+      if (!sellerPayTo) {
+        console.error("SELLER_PAY_TO is required.");
+      } else if (!isAddress(sellerPayTo)) {
+        console.error("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
+      } else {
+        break;
+      }
+      sellerPayTo = await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", sellerPayTo);
+    }
 
     const chainId = await askWithDefault(
       rl,
@@ -305,8 +317,8 @@ async function runWizard({ writeEnv }) {
       endedWindowSeconds = parseNonNegativeInt(endedWindowRaw);
     }
 
-    const ogTitle = await askOgField("OG_TITLE", existing.ogTitle, 'title');
-    const ogDescription = await askOgField("OG_DESCRIPTION", existing.ogDescription, 'description');
+    const ogTitle = await askOgField(rl, "OG_TITLE", existing.ogTitle, "title");
+    const ogDescription = await askOgField(rl, "OG_DESCRIPTION", existing.ogDescription, "description");
 
     const defaults = {
       sellerPayTo,

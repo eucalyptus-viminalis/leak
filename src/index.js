@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { x402ResourceServer } from "@x402/core/server";
 import { x402HTTPResourceServer, HTTPFacilitatorClient } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { isAddress } from "viem";
 
 dotenv.config();
 
@@ -57,6 +58,14 @@ function escapeXml(value) {
     .replaceAll("'", "&apos;");
 }
 
+function toSafeJsonForScript(value) {
+  return JSON.stringify(value)
+    .replace(/<\/script/gi, "<\\/script")
+    .replace(/<!--/g, "<\\!--")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 const PORT = Number(process.env.PORT || 4021);
 
 // Mirror the Python env names (with a couple backwards-compatible aliases)
@@ -69,7 +78,7 @@ const FACILITATOR_URL = (
   process.env.FACILITATOR_URL ||
   (FACILITATOR_MODE === "cdp_mainnet" ? DEFAULT_CDP_MAINNET_FACILITATOR_URL : DEFAULT_TESTNET_FACILITATOR_URL)
 ).trim();
-const SELLER_PAY_TO = process.env.SELLER_PAY_TO || process.env.PAY_TO;
+const SELLER_PAY_TO = String(process.env.SELLER_PAY_TO || process.env.PAY_TO || "").trim();
 const PRICE_USD = process.env.PRICE_USD || "1.00";
 const CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
 const ARTIFACT_PATH = process.env.ARTIFACT_PATH || process.env.PROTECTED_FILE;
@@ -90,6 +99,13 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim();
 const OG_IMAGE_PATH = OG_IMAGE_PATH_RAW
   ? (path.isAbsolute(OG_IMAGE_PATH_RAW) ? OG_IMAGE_PATH_RAW : path.join(__dirname, "..", OG_IMAGE_PATH_RAW))
   : "";
+const SKILL_NAME = "leak";
+const SKILL_DESCRIPTION = "Sell or buy x402-gated digital content using the leak CLI tool";
+const SKILL_SOURCE = "clawhub";
+const SKILL_INSTALL_COMMAND = "clawhub install leak";
+const WELL_KNOWN_CACHE_CONTROL = "public, max-age=60";
+const LEGACY_DISCOVERY_DEPRECATION =
+  "Deprecated endpoint; use /.well-known/skills/index.json for RFC-compatible discovery.";
 
 const SALE_START_TS = parsePositiveInt(process.env.SALE_START_TS, now());
 const SALE_END_TS = parsePositiveInt(process.env.SALE_END_TS, SALE_START_TS + WINDOW_SECONDS);
@@ -117,6 +133,11 @@ if (!SELLER_PAY_TO) {
   console.error("Missing required env var: SELLER_PAY_TO (or PAY_TO)");
   process.exit(1);
 }
+if (!isAddress(SELLER_PAY_TO)) {
+  console.error(`Invalid SELLER_PAY_TO (or PAY_TO): ${SELLER_PAY_TO}`);
+  console.error("Expected a valid Ethereum address (0x + 40 hex chars).");
+  process.exit(1);
+}
 if (!ARTIFACT_PATH) {
   console.error("Missing required env var: ARTIFACT_PATH (or PROTECTED_FILE)");
   process.exit(1);
@@ -139,6 +160,10 @@ function endedWindowActive(ts = now()) {
 
 function endedWindowCutoffTs() {
   return SALE_END_TS + ENDED_WINDOW_SECONDS;
+}
+
+function saleStatus(ts = now()) {
+  return saleEnded(ts) ? "ended" : "live";
 }
 
 function baseUrlFromReq(req) {
@@ -298,6 +323,84 @@ function promoModel(req) {
   };
 }
 
+function discoveryIndexUrl(model) {
+  return `${model.baseUrl}/.well-known/skills/index.json`;
+}
+
+function rfcResourceUrl(model) {
+  return `${model.baseUrl}/.well-known/skills/${SKILL_NAME}/resource.json`;
+}
+
+function buildDiscoveryResource(req) {
+  const model = promoModel(req);
+  return {
+    name: SKILL_NAME,
+    status: saleStatus(),
+    promo_url: model.promoUrl,
+    download_url: model.downloadUrl,
+    artifact_name: ARTIFACT_NAME,
+    price_usd: PRICE_USD,
+    price_currency: "USDC",
+    network: CHAIN_ID,
+    sale_end: new Date(SALE_END_TS * 1000).toISOString(),
+  };
+}
+
+function renderWellKnownSkillMd(req) {
+  const resource = buildDiscoveryResource(req);
+  return `# ${SKILL_NAME}
+
+${SKILL_DESCRIPTION}
+
+## Discovery
+- Promo URL: ${resource.promo_url}
+- Download URL: ${resource.download_url}
+- Status: ${resource.status}
+- Sale ends: ${resource.sale_end}
+
+## Agent Flow
+1. Read resource metadata from \`/.well-known/skills/${SKILL_NAME}/resource.json\`.
+2. Use \`download_url\` for x402 purchase and token mint.
+3. Download the file from \`/download?token=...\` and save it locally.
+
+## CLI
+- Install: \`${SKILL_INSTALL_COMMAND}\`
+- Buy: \`leak buy <promo_or_download_url> --buyer-private-key 0x...\`
+`;
+}
+
+function sendSkillIndex(req, res) {
+  const payload = {
+    skills: [
+      {
+        name: SKILL_NAME,
+        description: SKILL_DESCRIPTION,
+        files: ["SKILL.md", "resource.json"],
+      },
+    ],
+  };
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", WELL_KNOWN_CACHE_CONTROL);
+  if (req.method === "HEAD") return res.status(200).end();
+  return res.status(200).json(payload);
+}
+
+function sendSkillMarkdown(req, res) {
+  res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+  res.setHeader("Cache-Control", WELL_KNOWN_CACHE_CONTROL);
+  if (req.method === "HEAD") return res.status(200).end();
+  return res.status(200).send(renderWellKnownSkillMd(req));
+}
+
+function sendSkillResource(req, res) {
+  const payload = buildDiscoveryResource(req);
+  const statusCode = payload.status === "ended" ? 410 : 200;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", WELL_KNOWN_CACHE_CONTROL);
+  if (req.method === "HEAD") return res.status(statusCode).end();
+  return res.status(statusCode).json(payload);
+}
+
 function renderPromoPage(model, { ended }) {
   const stateLabel = ended ? "Ended" : "Live";
   const pageTitle = model.ogTitle;
@@ -307,21 +410,28 @@ function renderPromoPage(model, { ended }) {
   const expiresIso = new Date(model.saleEndTs * 1000).toISOString();
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "DigitalDocument",
+    "@type": "Product",
     name: model.ogTitle,
     description,
     image: model.imageUrl,
-    downloadUrl: model.downloadUrl,
-    availabilityEnds: expiresIso,
-    paymentProtocol: "x402",
+    url: model.promoUrl,
+    category: "DigitalDocument",
     offers: {
       "@type": "Offer",
+      url: model.downloadUrl,
       price: PRICE_USD,
-      priceCurrency: "USDC",
+      priceCurrency: "USD",
       availability: ended ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
       validThrough: expiresIso,
     },
+    additionalProperty: [
+      { "@type": "PropertyValue", name: "paymentProtocol", value: "x402" },
+      { "@type": "PropertyValue", name: "paymentSettlementCurrency", value: "USDC" },
+      { "@type": "PropertyValue", name: "network", value: CHAIN_ID },
+      { "@type": "PropertyValue", name: "downloadUrl", value: model.downloadUrl },
+    ],
   };
+  const safeJsonLd = toSafeJsonForScript(jsonLd);
 
   const examplePrompt = `Buy this and save it: ${model.downloadUrl}`;
 
@@ -344,7 +454,7 @@ function renderPromoPage(model, { ended }) {
   <meta name="twitter:description" content="${escapeHtml(description)}" />
   <meta name="twitter:image" content="${escapeHtml(model.imageUrl)}" />
 
-  <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
+  <script type="application/ld+json">${safeJsonLd}</script>
   <style>
     :root { color-scheme: light; }
     body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 24px; background: #f7f7f5; color: #1f1f1f; }
@@ -623,28 +733,44 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, ts: now() });
 });
 
+app.get("/.well-known/skills/index.json", sendSkillIndex);
+app.head("/.well-known/skills/index.json", sendSkillIndex);
+
+app.get(`/.well-known/skills/${SKILL_NAME}/SKILL.md`, sendSkillMarkdown);
+app.head(`/.well-known/skills/${SKILL_NAME}/SKILL.md`, sendSkillMarkdown);
+
+app.get(`/.well-known/skills/${SKILL_NAME}/resource.json`, sendSkillResource);
+app.head(`/.well-known/skills/${SKILL_NAME}/resource.json`, sendSkillResource);
+
 // Well-known endpoint for agent skill discovery (RFC-inspired)
 app.get("/.well-known/leak", (req, res) => {
+  const model = promoModel(req);
+  const rfcResourcePath = rfcResourceUrl(model);
+  const discoveryPath = discoveryIndexUrl(model);
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", WELL_KNOWN_CACHE_CONTROL);
   if (saleEnded()) {
     return res.status(410).json({
       error: "sale ended",
       skill: {
-        name: "leak",
-        description: "Sell or buy x402-gated digital content using the leak CLI tool",
-        source: "clawhub",
-        install_command: "clawhub install leak",
+        name: SKILL_NAME,
+        description: SKILL_DESCRIPTION,
+        source: SKILL_SOURCE,
+        install_command: SKILL_INSTALL_COMMAND,
       },
       message: "This leak has expired, but you can install the leak skill for future purchases",
+      deprecation: LEGACY_DISCOVERY_DEPRECATION,
+      discovery_index_url: discoveryPath,
+      rfc_resource_url: rfcResourcePath,
     });
   }
 
-  const model = promoModel(req);
   res.json({
     skill: {
-      name: "leak",
-      description: "Sell or buy x402-gated digital content using the leak CLI tool",
-      source: "clawhub",
-      install_command: "clawhub install leak",
+      name: SKILL_NAME,
+      description: SKILL_DESCRIPTION,
+      source: SKILL_SOURCE,
+      install_command: SKILL_INSTALL_COMMAND,
     },
     resource: {
       type: "x402-gated-download",
@@ -656,6 +782,9 @@ app.get("/.well-known/leak", (req, res) => {
       network: CHAIN_ID,
       sale_end: new Date(SALE_END_TS * 1000).toISOString(),
     },
+    deprecation: LEGACY_DISCOVERY_DEPRECATION,
+    discovery_index_url: discoveryPath,
+    rfc_resource_url: rfcResourcePath,
   });
 });
 

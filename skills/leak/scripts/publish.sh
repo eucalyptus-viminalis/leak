@@ -88,13 +88,15 @@ if printf '%s\n' "$@" | grep -q -- '--public'; then
 
   if [ -n "$URL" ]; then
     echo
-    echo "[leak-skill] SHARE LINK: ${URL}/download"
+    echo "[leak-skill] PROMO LINK: ${URL}/"
+    echo "[leak-skill] BUY LINK:   ${URL}/download"
   fi
 
   exit "$CODE"
 else
   echo "[leak-skill] Starting leak server (no public tunnel)."
-  echo "[leak-skill] Local share link (same machine): http://127.0.0.1:${PORT}/download"
+  echo "[leak-skill] Local promo link (same machine): http://127.0.0.1:${PORT}/"
+  echo "[leak-skill] Local buy link (same machine):   http://127.0.0.1:${PORT}/download"
   echo "[leak-skill] Tip: to expose publicly, re-run with --public (requires cloudflared)."
   exec_leak "${ARGS[@]}"
 fi

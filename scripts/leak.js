@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { spawn, spawnSync } from "node:child_process";
+import { isAddress } from "viem";
 import { defaultFacilitatorUrlForMode, readConfig } from "./config_store.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -219,9 +220,14 @@ async function main() {
     process.exit(1);
   }
 
-  const payTo = args["pay-to"] || process.env.SELLER_PAY_TO || configDefaults.sellerPayTo;
+  const payTo = String(args["pay-to"] || process.env.SELLER_PAY_TO || configDefaults.sellerPayTo || "").trim();
   if (!payTo) {
     console.error("Missing --pay-to, SELLER_PAY_TO in env, or sellerPayTo in ~/.leak/config.json");
+    process.exit(1);
+  }
+  if (!isAddress(payTo)) {
+    console.error(`Invalid seller payout address: ${payTo}`);
+    console.error("Expected a valid Ethereum address (0x + 40 hex chars).");
     process.exit(1);
   }
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Buy a leak (/download) URL and save the artifact.
+# Buy from a leak promo URL (/) or buy URL (/download) and save the artifact.
 #
 # Usage:
-#   bash skills/leak/scripts/buy.sh <download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]
+#   bash skills/leak/scripts/buy.sh <promo_or_download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]
 #
 # Examples:
-#   bash skills/leak/scripts/buy.sh "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x...
+#   bash skills/leak/scripts/buy.sh "https://xxxx.trycloudflare.com/" --buyer-private-key 0x...
 #   bash skills/leak/scripts/buy.sh "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --basename myfile
-#   bash skills/leak/scripts/buy.sh "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --out ./downloads/myfile.bin
+#   bash skills/leak/scripts/buy.sh "https://xxxx.trycloudflare.com/" --buyer-private-key 0x... --out ./downloads/myfile.bin
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -34,7 +34,7 @@ run_leak() {
 }
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: bash skills/leak/scripts/buy.sh <download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]"
+  echo "Usage: bash skills/leak/scripts/buy.sh <promo_or_download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]"
   exit 1
 fi
 

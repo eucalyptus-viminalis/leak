@@ -4,7 +4,7 @@
 - cutting-edge architecture with dial-up sensibilities
 - "For a limited time only."
 
-**Leak** is a content creator tool that can set up a time-boxed online store hosted straight from your computer. It leverages open source tools, the x402 protocol, and AI assistants (like OpenClaw) to make selling digital goods as easy as asking your agent about the weather. Leak is for fans too; buying content is easy as giving your agent the download link shared by your favorite creators and funding your agent with USDC -- installing the leak skill makes all of this a breeze.
+**Leak** is a content creator tool that can set up a time-boxed online store hosted straight from your computer. It leverages open source tools, the x402 protocol, and AI assistants (like OpenClaw) to make selling digital goods as easy as asking your agent about the weather. Leak is for fans too; buying content is easy as giving your agent the promo or download link shared by your favorite creators and funding your agent with USDC -- installing the leak skill makes all of this a breeze.
 
 ## Quick Start
 
@@ -39,7 +39,7 @@ leak --file ./your-file.bin --public
 **Buying**:
 
 ```bash
-leak buy <buy_link> --buyer-private-key <private_key>
+leak buy <promo_or_download_link> --buyer-private-key <private_key>
 ```
 
 ### Seller Quickstart 1: Local testnet sale (fastest path)
@@ -87,9 +87,10 @@ Use the output URLs like this:
 Use the direct CLI buy flow:
 
 ```bash
-leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xYOUR_BUYER_KEY
+leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key 0xYOUR_BUYER_KEY
 ```
 
+`leak buy` accepts either the promo URL (`/`) or direct x402 URL (`/download`).
 By default, the file is saved to your current directory using the server-provided filename; use `--out` or `--basename` to control naming.
 When settlement metadata is returned, `leak buy` also prints a receipt block with network + transaction hash (and Basescan link on Base networks).
 
@@ -98,7 +99,7 @@ Security note: use a dedicated buyer key with limited funds.
 ### Buyer Skeleton (Clawhub skill flow)
 
 - install the `leak` skill from Clawhub
-- give your agent the `/download` URL
+- give your agent the promo URL (`/`) from the post (or `/download`)
 - provide a funded buyer key when prompted
 - let the agent complete payment + download through the skill
 
@@ -175,7 +176,7 @@ Optional flags:
 - `--og-image-url https://...` (absolute `http(s)` URL) or `--og-image-url ./cover.png` (local image path)
 - `--ended-window-seconds 86400` (keep ended promo page online before auto-stop)
 - `--network eip155:84532`
-- `--pay-to 0x...`
+- `--pay-to 0x...` (must be a valid Ethereum address)
 - `--port 4021`
 
 ### Persistent config (`leak config`)
@@ -300,7 +301,7 @@ cp .env.example .env
 ```
 
 Minimum you must set:
-- `SELLER_PAY_TO` (the address that receives USDC)
+- `SELLER_PAY_TO` (the address that receives USDC; must be a valid Ethereum address)
 - `ARTIFACT_PATH` (the file you want to serve)
 
 Example artifact:
@@ -367,7 +368,7 @@ There’s a Node buyer test script that does the whole 3-step flow (402 → pay 
 There is now a proper buyer CLI that takes the link directly (no `BASE_URL` env):
 
 ```bash
-leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x...
+leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key 0x...
 ```
 
 When available, it prints payment receipt metadata including transaction hash and network before saving the file.
@@ -414,6 +415,10 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 - `GET /` promo HTML page with OG/Twitter tags
   - `200` while sale is active
   - `410` once sale has ended
+- `GET|HEAD /.well-known/skills/index.json` RFC skill discovery index
+- `GET|HEAD /.well-known/skills/leak/SKILL.md` RFC skill metadata markdown
+- `GET|HEAD /.well-known/skills/leak/resource.json` RFC sale/resource metadata (`200` live, `410` ended)
+- `GET /.well-known/leak` legacy discovery endpoint (backward-compatible)
 - `GET /info` machine-readable JSON status (compat endpoint)
 - `GET /og-image` configured OG image file (when using local `--og-image-url` path)
 - `GET /og.svg` fallback OG image (used when `--og-image-url` is not set)
@@ -421,6 +426,12 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 - `GET /download` x402-protected download endpoint
   - active sale: normal x402/token flow
   - ended sale: `410`
+
+---
+
+## Troubleshooting
+
+- **`Invalid seller payout address`** → set `--pay-to` / `SELLER_PAY_TO` to a valid Ethereum address (`0x` + 40 hex chars).
 
 ---
 
@@ -433,7 +444,7 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 - `FACILITATOR_URL`
   - default with `FACILITATOR_MODE=testnet`: `https://x402.org/facilitator`
   - default with `FACILITATOR_MODE=cdp_mainnet`: `https://api.cdp.coinbase.com/platform/v2/x402`
-- `SELLER_PAY_TO` receiving address
+- `SELLER_PAY_TO` receiving address (valid Ethereum address, `0x` + 40 hex chars)
 - `PRICE_USD` (string like `1.00`)
 - `CHAIN_ID`
   - default: `eip155:84532` (Base Sepolia) for `x402.org/facilitator`

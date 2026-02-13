@@ -26,7 +26,7 @@ metadata:
 This skill operates the `leak` CLI tool:
 - **Publish** a file behind an x402 `402 Payment Required` gate and mint a time-limited token after payment.
 - **Share** `/` as the promo URL (social-card friendly) and use `/download` for the purchase flow.
-- **Buy** an x402 `/download` URL and save the artifact locally.
+- **Buy** from either a promo URL (`/`) or x402 URL (`/download`) and save the artifact locally.
 
 ## Terminology Guide
 
@@ -72,9 +72,9 @@ When the user wants to publish, guide them through:
 2. **Price**: How much USDC? (e.g., 0.01, 1.00)
 3. **Duration**: How long? (15m, 1h, 6h, 24h)
 4. **Public**: Do you want a public link? (requires cloudflared)
-5. **Pay-to address**: Where should payments go?
+5. **Pay-to address**: Where should payments go? (must be a valid Ethereum address)
 
-Then run the publish command and provide the share URL.
+Then run the publish command and provide both promo + buy URLs, with promo URL as the default share URL.
 
 ### Local-only (good for a trial run)
 
@@ -101,7 +101,8 @@ leak \
 ```
 
 What to share with the buyer:
-- `http://127.0.0.1:4021/download` (local testing)
+- `http://127.0.0.1:4021/` (promo URL for sharing)
+- `http://127.0.0.1:4021/download` (direct buy URL)
 - or your LAN IP (if you want another device on the same network to test)
 
 ### Public link (Cloudflare quick tunnel)
@@ -175,8 +176,9 @@ Prereq: An EVM-compatible private key
 
 When the user wants to buy/download:
 
-1. **URL**: Get the download URL (if not already provided)
-   - Example: `https://xxxx.trycloudflare.com/download`
+1. **URL**: Get the promo URL or download URL (if not already provided)
+   - Example promo URL: `https://xxxx.trycloudflare.com/`
+   - Example download URL: `https://xxxx.trycloudflare.com/download`
 
 2. **Check prerequisites** (in order):
    - Do they have a wallet/private key?
@@ -202,23 +204,23 @@ When the user wants to buy/download:
 
 
 ```bash
-bash scripts/buy.sh "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xBUYER_KEY
+bash scripts/buy.sh "https://xxxx.trycloudflare.com/" --buyer-private-key 0xBUYER_KEY
 ```
 
 Direct CLI equivalent:
 
 ```bash
-leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xBUYER_KEY
+leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key 0xBUYER_KEY
 ```
 
 Optional save naming:
 
 ```bash
 # choose exact output path
-leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --out ./downloads/myfile.bin
+leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key 0x... --out ./downloads/myfile.bin
 
 # choose basename, keep server extension
-leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --basename myfile
+leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key 0x... --basename myfile
 ```
 
 ### Common buyer issues
@@ -232,7 +234,7 @@ leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --b
 
 ### Example buyer interaction
 
-User: "buy this https://abc123.trycloudflare.com/download"
+User: "buy this https://abc123.trycloudflare.com/"
 
 Agent: 
 - "I'll help you download that. First, I'll check what it costs..."
@@ -243,5 +245,6 @@ Agent:
 ## Troubleshooting
 
 - **`leak: command not found`** → run `bash skills/leak/scripts/ensure_leak.sh` or use `npx -y leak-cli --help` for one-off commands.
+- **`Invalid seller payout address`** → use a valid Ethereum address for `--pay-to` / `SELLER_PAY_TO` (`0x` + 40 hex chars).
 - **`--public` tunnel fails** → install `cloudflared` (`brew install cloudflared` on macOS), then retry.
 - **Port in use** → add `--port 4021` with a different number and use that port in the tunnel.
