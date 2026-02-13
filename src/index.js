@@ -314,6 +314,13 @@ function renderPromoPage(model, { ended }) {
     downloadUrl: model.downloadUrl,
     availabilityEnds: expiresIso,
     paymentProtocol: "x402",
+    offers: {
+      "@type": "Offer",
+      price: PRICE_USD,
+      priceCurrency: "USDC",
+      availability: ended ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+      validThrough: expiresIso,
+    },
   };
 
   const examplePrompt = `Buy this and save it: ${model.downloadUrl}`;
@@ -553,6 +560,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/info", (req, res) => {
+  const model = promoModel(req);
   res.json({
     name: "leak",
     artifact: path.basename(absArtifactPath()),
@@ -564,6 +572,8 @@ app.get("/info", (req, res) => {
     confirmations_required: CONFIRMATIONS_REQUIRED,
     facilitator_url: FACILITATOR_URL,
     facilitator_mode: FACILITATOR_MODE,
+    download_url: model.downloadUrl,
+    promo_url: model.promoUrl,
   });
 });
 
@@ -611,6 +621,42 @@ app.get("/og-image", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, ts: now() });
+});
+
+// Well-known endpoint for agent skill discovery (RFC-inspired)
+app.get("/.well-known/leak", (req, res) => {
+  if (saleEnded()) {
+    return res.status(410).json({
+      error: "sale ended",
+      skill: {
+        name: "leak",
+        description: "Download x402-gated content from a time-limited leak store",
+        source: "clawhub",
+        install_command: "clawhub install leak",
+      },
+      message: "This leak has expired, but you can install the leak skill for future purchases",
+    });
+  }
+
+  const model = promoModel(req);
+  res.json({
+    skill: {
+      name: "leak",
+      description: "Download x402-gated content from a time-limited leak store",
+      source: "clawhub",
+      install_command: "clawhub install leak",
+    },
+    resource: {
+      type: "x402-gated-download",
+      download_url: model.downloadUrl,
+      promo_url: model.promoUrl,
+      artifact_name: ARTIFACT_NAME,
+      price_usd: PRICE_USD,
+      price_currency: "USDC",
+      network: CHAIN_ID,
+      sale_end: new Date(SALE_END_TS * 1000).toISOString(),
+    },
+  });
 });
 
 // x402 gate for GET /download (supports PAYMENT-SIGNATURE and legacy X-PAYMENT by aliasing)
