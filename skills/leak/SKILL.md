@@ -1,12 +1,12 @@
 ---
 name: leak
 description: Sell or buy x402-gated digital content using the leak CLI tool. On the seller side, use this skill when the user wants to publish, release, or "leak" a file and wants to charge a price. On the buyer side, use this when the user wants to download a file that requires payment.
-compatability: Requires access to the internet
+compatibility: Requires access to the internet
 version: 2026.2.11
 metadata:
   openclaw:
     emoji: 💦
-    os: ["darwin"]
+    os: ["darwin", "linux"]
     requires:
       env:
       bins: ["leak"]
@@ -57,9 +57,26 @@ Notes:
 
 ## Publish content (server)
 
+Activate when the user says things like:
+- "publish this"
+- "share this file"
+- "make this downloadable"
+- "leak this"
+
 Preferred: use the helper script, which ensures install and prints a clear share link.
 
-### Local-only (recommended default)
+### Interactive flow (recommended)
+
+When the user wants to publish, guide them through:
+1. **File**: Which file or folder?
+2. **Price**: How much USDC? (e.g., 0.01, 1.00)
+3. **Duration**: How long? (15m, 1h, 6h, 24h)
+4. **Public**: Do you want a public link? (requires cloudflared)
+5. **Pay-to address**: Where should payments go?
+
+Then run the publish command and provide the share URL.
+
+### Local-only (good for a trial run)
 
 Only use this method for testing purposes; use this when the user wants to test how the server will function before exposing it to the public.
 
@@ -139,13 +156,50 @@ Use `--confirmed` to settle on-chain before issuing the token:
 leak --file ./protected/asset.bin --price 0.01 --window 15m --pay-to 0x... --confirmed
 ```
 
-This flag must be used when the user wants wants to sell their content as it ensures that buyers can only download the content if their payments are confirmed onchain.
+This flag must be used when the user wants to sell their content as it ensures that buyers can only download the content if their payments are confirmed onchain.
 
 ## Buy content
+
+Activate when user says:
+- "buy this"
+- "download this"
+- "get this file"
+- "purchase this"
+- Or provides a leak URL directly
 
 Preferred: use the helper script (ensures install first).
 
 Prereq: An EVM-compatible private key
+
+### Buyer flow
+
+When the user wants to buy/download:
+
+1. **URL**: Get the download URL (if not already provided)
+   - Example: `https://xxxx.trycloudflare.com/download`
+
+2. **Check prerequisites** (in order):
+   - Do they have a wallet/private key?
+   - Do they have enough USDC to cover the price?
+
+3. **Missing wallet?** 
+   - Tell them the price
+   - Help them create an EVM-compatible wallet
+   - Save the key pair securely and tell them where
+
+4. **Missing funds?**
+   - Tell them exactly how much USDC to send
+   - Wait for confirmation, then retry
+
+5. **Execute purchase**:
+   - Run the buy script with their private key
+   - Show them the receipt (transaction hash, network)
+   - Confirm file saved location
+
+6. **Success**:
+   - Confirm the file is saved
+   - Show them the path
+
 
 ```bash
 bash scripts/buy.sh "https://xxxx.trycloudflare.com/download" --buyer-private-key 0xBUYER_KEY
@@ -167,15 +221,24 @@ leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --o
 leak buy "https://xxxx.trycloudflare.com/download" --buyer-private-key 0x... --basename myfile
 ```
 
-### Troubleshooting
+### Common buyer issues
 
-#### Scenario 1: User does not have an evm-compatible private key
+| Issue | Agent response |
+|-------|---------------|
+| "I don't have a wallet" | Create one using eth-account, save securely |
+| "I don't have USDC" | Explain amount needed + where to get it |
+| "Transaction failed" | Check gas, retry, or check if sale ended |
+| "File already exists" | Ask to overwrite or choose new name |
 
-Tell them how much the download costs and help them through creating a EVM-compatible public-private key pair if they don't already have one. If the user asks you to make one for them, install the official Ethereum Foundation Python library `eth-account`, save the key pair in your workspace and tell them where you've saved it.
+### Example buyer interaction
 
-#### Scenario 2: User does not have adequate funds to make the payment
+User: "buy this https://abc123.trycloudflare.com/download"
 
-Then, tell them to send enough USDC to cover the payment. Once, that's received try the download link again.
+Agent: 
+- "I'll help you download that. First, I'll check what it costs..."
+- [Fetches 402 response to get price]
+- "This costs 0.01 USDC. Do you have a wallet with USDC, or do you need help setting one up?"
+
 
 ## Troubleshooting
 
