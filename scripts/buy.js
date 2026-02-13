@@ -16,14 +16,14 @@ const SKILL_NAME = "leak";
 
 function usageAndExit(code = 1) {
   console.log(
-    "Usage: leak buy <promo_or_download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]",
+    "Usage: leak buy <promo_or_download_url> (--buyer-private-key-file <path> | --buyer-private-key-stdin) [--out <path> | --basename <name>]",
   );
   console.log("Examples:");
   console.log(
-    "  leak buy https://xxxx.trycloudflare.com/ --buyer-private-key 0x...",
+    "  leak buy https://xxxx.trycloudflare.com/ --buyer-private-key-file ./buyer.key",
   );
   console.log(
-    "  leak buy https://xxxx.trycloudflare.com/download --buyer-private-key 0x... --basename myfile",
+    "  cat ./buyer.key | leak buy https://xxxx.trycloudflare.com/download --buyer-private-key-stdin --basename myfile",
   );
   process.exit(code);
 }
@@ -61,6 +61,64 @@ function normalizePrivateKey(pk) {
   const s = String(pk).trim();
   if (s.startsWith("0x")) return s;
   return `0x${s}`;
+}
+
+function readPrivateKeyFromFile(filePath) {
+  if (typeof filePath !== "string" || !filePath.trim()) {
+    throw new Error("Missing value for --buyer-private-key-file");
+  }
+  const absPath = path.resolve(process.cwd(), filePath.trim());
+  if (!fs.existsSync(absPath)) {
+    throw new Error(`Private key file not found: ${absPath}`);
+  }
+  const stat = fs.statSync(absPath);
+  if (!stat.isFile()) {
+    throw new Error(`Private key path must be a file: ${absPath}`);
+  }
+  const contents = fs.readFileSync(absPath, "utf8");
+  const firstLine = String(contents).split(/\r?\n/, 1)[0]?.trim() || "";
+  if (!firstLine) {
+    throw new Error(`Private key file is empty: ${absPath}`);
+  }
+  return firstLine;
+}
+
+function readPrivateKeyFromStdin() {
+  let data = "";
+  try {
+    data = fs.readFileSync(0, "utf8");
+  } catch {
+    throw new Error("Failed to read private key from stdin");
+  }
+  const firstLine = String(data).split(/\r?\n/, 1)[0]?.trim() || "";
+  if (!firstLine) {
+    throw new Error("No private key received on stdin");
+  }
+  return firstLine;
+}
+
+function resolveBuyerPrivateKey(args) {
+  if (typeof args["buyer-private-key"] !== "undefined") {
+    throw new Error(
+      "The --buyer-private-key flag is insecure and no longer supported. Use --buyer-private-key-file <path> or --buyer-private-key-stdin.",
+    );
+  }
+
+  const hasFileFlag = typeof args["buyer-private-key-file"] !== "undefined";
+  const hasStdinFlag = Boolean(args["buyer-private-key-stdin"]);
+  if (hasFileFlag && hasStdinFlag) {
+    throw new Error("Use exactly one key input: --buyer-private-key-file or --buyer-private-key-stdin");
+  }
+  if (hasFileFlag) {
+    return readPrivateKeyFromFile(args["buyer-private-key-file"]);
+  }
+  if (hasStdinFlag) {
+    return readPrivateKeyFromStdin();
+  }
+
+  throw new Error(
+    "Missing buyer key input. Use --buyer-private-key-file <path> or --buyer-private-key-stdin.",
+  );
 }
 
 function filenameFromContentDisposition(cd) {
@@ -267,16 +325,21 @@ async function main() {
   const inputUrl = args._[0];
   if (!inputUrl) usageAndExit(1);
 
-  const buyerPk =
-    args["buyer-private-key"] || process.env.BUYER_PRIVATE_KEY || process.env.LEAK_BUYER_PRIVATE_KEY;
-  if (!buyerPk) {
-    console.error(
-      "Missing --buyer-private-key (or env BUYER_PRIVATE_KEY / LEAK_BUYER_PRIVATE_KEY)",
-    );
+  let buyerPk;
+  try {
+    buyerPk = resolveBuyerPrivateKey(args);
+  } catch (err) {
+    console.error(err.message || String(err));
     process.exit(1);
   }
 
-  const account = privateKeyToAccount(normalizePrivateKey(buyerPk));
+  let account;
+  try {
+    account = privateKeyToAccount(normalizePrivateKey(buyerPk));
+  } catch {
+    console.error("Invalid buyer private key format.");
+    process.exit(1);
+  }
   const client = new x402Client();
   registerExactEvmScheme(client, { signer: account });
 

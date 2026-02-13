@@ -365,7 +365,7 @@ ${SKILL_DESCRIPTION}
 
 ## CLI
 - Install: \`${SKILL_INSTALL_COMMAND}\`
-- Buy: \`leak buy <promo_or_download_url> --buyer-private-key 0x...\`
+- Buy: \`leak buy <promo_or_download_url> --buyer-private-key-file ./buyer.key\`
 `;
 }
 

@@ -39,7 +39,7 @@ leak --file ./your-file.bin --public
 **Buying**:
 
 ```bash
-leak buy <promo_or_download_link> --buyer-private-key <private_key>
+leak buy <promo_or_download_link> (--buyer-private-key-file <path> | --buyer-private-key-stdin)
 ```
 
 ### Seller Quickstart 1: Local testnet sale (fastest path)
@@ -87,7 +87,7 @@ Use the output URLs like this:
 Use the direct CLI buy flow:
 
 ```bash
-leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key 0xYOUR_BUYER_KEY
+leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key-file ./buyer.key
 ```
 
 `leak buy` accepts either the promo URL (`/`) or direct x402 URL (`/download`).
@@ -103,7 +103,7 @@ Security note: use a dedicated buyer key with limited funds.
 - provide a funded buyer key when prompted
 - let the agent complete payment + download through the skill
 
-Under the hood, the skill scripts try `leak` on PATH first and automatically fall back to `npx -y leak-cli` for one-off usage if needed.
+Under the hood, the skill scripts try `leak` on PATH first and fall back to `npx -y leak-cli@2026.2.14` for one-off usage if needed.
 
 ### Next: Mainnet checklist (optional)
 
@@ -368,7 +368,7 @@ There’s a Node buyer test script that does the whole 3-step flow (402 → pay 
 There is now a proper buyer CLI that takes the link directly (no `BASE_URL` env):
 
 ```bash
-leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key 0x...
+leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key-file ./buyer.key
 ```
 
 When available, it prints payment receipt metadata including transaction hash and network before saving the file.

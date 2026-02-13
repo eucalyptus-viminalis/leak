@@ -12,11 +12,13 @@ import { defaultFacilitatorUrlForMode, readConfig } from "./config_store.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SERVER_ENTRY = path.resolve(__dirname, "..", "src", "index.js");
+const PUBLIC_CONFIRM_PHRASE = "I_UNDERSTAND_PUBLIC_EXPOSURE";
+const ABSOLUTE_SENSITIVE_PATHS = ["/etc", "/proc", "/sys", "/var/run/secrets"];
 
 function usageAndExit(code = 1, hint = "") {
   if (hint) console.error(`Hint: ${hint}\n`);
-  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
-  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
+  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
+  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
   console.log(``);
   console.log(`Notes:`);
   console.log(`  --public requires cloudflared (Cloudflare Tunnel) installed.`);
@@ -24,6 +26,7 @@ function usageAndExit(code = 1, hint = "") {
   console.log(`  leak --file ./vape.jpg`);
   console.log(`  leak --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
   console.log(`  leak --file ./vape.jpg --public --og-title "My New Drop" --og-description "Agent-assisted purchase"`);
+  console.log(`  leak --file ./vape.jpg --public --public-confirm ${PUBLIC_CONFIRM_PHRASE}`);
   console.log(`  leak --file ./vape.jpg --public --og-image-url ./cover.png`);
   console.log(`  npm run leak -- --file ./vape.jpg`);
   console.log(`  npm run leak -- --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
@@ -170,6 +173,100 @@ function resolveFile(p) {
   return abs;
 }
 
+function normalizePathForCompare(p) {
+  return path.resolve(p);
+}
+
+function isPathInside(candidate, root) {
+  const rel = path.relative(root, candidate);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function sensitiveRoots() {
+  const roots = [...ABSOLUTE_SENSITIVE_PATHS];
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : "";
+  if (home) {
+    roots.push(path.join(home, ".ssh"));
+    roots.push(path.join(home, ".aws"));
+    roots.push(path.join(home, ".gnupg"));
+    roots.push(path.join(home, ".config", "gcloud"));
+  }
+  const out = new Set();
+  for (const root of roots.map(normalizePathForCompare)) {
+    out.add(root);
+    try {
+      out.add(normalizePathForCompare(fs.realpathSync(root)));
+    } catch {}
+  }
+  return [...out];
+}
+
+function firstMatchingSensitiveRoot(artifactPath) {
+  const normalizedArtifactPath = normalizePathForCompare(artifactPath);
+  for (const root of sensitiveRoots()) {
+    if (isPathInside(normalizedArtifactPath, root)) return root;
+  }
+  return null;
+}
+
+function resolveAndValidateArtifactPath(fileArg, args) {
+  const artifactPath = resolveFile(fileArg);
+  if (!fs.existsSync(artifactPath)) {
+    throw new Error(`File not found: ${artifactPath}`);
+  }
+
+  const st = fs.lstatSync(artifactPath);
+  if (st.isSymbolicLink()) {
+    throw new Error(`Refusing symlink artifact path: ${artifactPath}`);
+  }
+  if (!st.isFile()) {
+    throw new Error(`Artifact must be a regular file (directories are not allowed): ${artifactPath}`);
+  }
+
+  const resolvedArtifactPath = fs.realpathSync(artifactPath);
+  const allowSensitivePath = Boolean(args["allow-sensitive-path"]);
+  const acknowledgeSensitivePathRisk = Boolean(args["acknowledge-sensitive-path-risk"]);
+  if (allowSensitivePath !== acknowledgeSensitivePathRisk) {
+    throw new Error("Sensitive-path override requires both --allow-sensitive-path and --acknowledge-sensitive-path-risk");
+  }
+
+  const sensitiveRoot = firstMatchingSensitiveRoot(resolvedArtifactPath);
+  if (sensitiveRoot && !allowSensitivePath) {
+    throw new Error(
+      `Refusing sensitive artifact path (${resolvedArtifactPath}). To override intentionally, pass --allow-sensitive-path --acknowledge-sensitive-path-risk.`,
+    );
+  }
+
+  return resolvedArtifactPath;
+}
+
+async function ensurePublicExposureConfirmed(args) {
+  if (!args.public) return;
+
+  const provided = typeof args["public-confirm"] === "string" ? args["public-confirm"].trim() : "";
+  if (provided) {
+    if (provided !== PUBLIC_CONFIRM_PHRASE) {
+      throw new Error(`Invalid --public-confirm value. Expected exactly: ${PUBLIC_CONFIRM_PHRASE}`);
+    }
+    return;
+  }
+
+  if (!input.isTTY || !output.isTTY) {
+    throw new Error(`--public requires --public-confirm ${PUBLIC_CONFIRM_PHRASE} in non-interactive mode`);
+  }
+
+  const rl = readline.createInterface({ input, output });
+  try {
+    console.log("[leak] You are about to expose a local file to the public internet.");
+    const answer = (await rl.question(`[leak] Type ${PUBLIC_CONFIRM_PHRASE} to continue: `)).trim();
+    if (answer !== PUBLIC_CONFIRM_PHRASE) {
+      throw new Error("Public exposure confirmation failed. Aborting.");
+    }
+  } finally {
+    rl.close();
+  }
+}
+
 async function promptMissing({ price, windowSeconds }) {
   const rl = readline.createInterface({ input, output });
   try {
@@ -214,9 +311,11 @@ async function main() {
     usageAndExit(1);
   }
 
-  const artifactPath = resolveFile(fileArg);
-  if (!fs.existsSync(artifactPath)) {
-    console.error(`File not found: ${artifactPath}`);
+  let artifactPath;
+  try {
+    artifactPath = resolveAndValidateArtifactPath(fileArg, args);
+  } catch (err) {
+    console.error(err.message || String(err));
     process.exit(1);
   }
 
@@ -283,6 +382,13 @@ async function main() {
   const saleEndTs = saleStartTs + prompted.windowSeconds;
   const effectiveEndedWindowSeconds = endedWindowSeconds ?? defaultEndedWindowSeconds;
   const stopAfterSeconds = prompted.windowSeconds + effectiveEndedWindowSeconds;
+
+  try {
+    await ensurePublicExposureConfirmed(args);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
 
   // Spawn the server with explicit env so there's no confusion.
   const env = {

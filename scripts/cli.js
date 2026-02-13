@@ -31,7 +31,7 @@ function runSubcommand(scriptName, argv) {
 if (!sub || sub === "--help" || sub === "-h") {
   console.log("Usage:");
   console.log("  leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]");
-  console.log("  leak buy <promo_or_download_url> --buyer-private-key 0x... [--out <path> | --basename <name>]");
+  console.log("  leak buy <promo_or_download_url> (--buyer-private-key-file <path> | --buyer-private-key-stdin) [--out <path> | --basename <name>]");
   console.log("  leak config");
   console.log("  leak config show");
   console.log("  leak config --write-env");

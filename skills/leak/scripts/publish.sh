@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+LEAK_CLI_VERSION="2026.2.14"
+PUBLIC_CONFIRM_PHRASE="I_UNDERSTAND_PUBLIC_EXPOSURE"
+
 # Publish a file with the leak server and print a clear share link.
 #
 # Usage:
@@ -10,25 +13,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$SKILL_DIR/../.." && pwd)"   # leak repo root
 
-# Ensure CLI exists (may npm link)
-bash "$SCRIPT_DIR/ensure_leak.sh" >/dev/null || true
-
-# Make sure this shell can see global npm bins (npm@10 doesn't support `npm bin -g`).
-NPM_PREFIX_GLOBAL="$(npm prefix -g)"
-export PATH="$NPM_PREFIX_GLOBAL/bin:$PATH"
-
 run_leak() {
   if command -v leak >/dev/null 2>&1; then
     leak "$@"
     return
   fi
   if command -v npx >/dev/null 2>&1; then
-    npx -y leak-cli "$@"
+    npx -y "leak-cli@${LEAK_CLI_VERSION}" "$@"
     return
   fi
   echo "[leak-skill] ERROR: leak not found on PATH and npx is unavailable."
-  echo "[leak-skill] Run: bash skills/leak/scripts/ensure_leak.sh"
-  echo "[leak-skill] Or install Node/npm and retry with npx fallback."
+  echo "[leak-skill] Install leak-cli (npm i -g leak-cli) or install Node/npm to use npx fallback."
   exit 1
 }
 
@@ -37,11 +32,10 @@ exec_leak() {
     exec leak "$@"
   fi
   if command -v npx >/dev/null 2>&1; then
-    exec npx -y leak-cli "$@"
+    exec npx -y "leak-cli@${LEAK_CLI_VERSION}" "$@"
   fi
   echo "[leak-skill] ERROR: leak not found on PATH and npx is unavailable."
-  echo "[leak-skill] Run: bash skills/leak/scripts/ensure_leak.sh"
-  echo "[leak-skill] Or install Node/npm and retry with npx fallback."
+  echo "[leak-skill] Install leak-cli (npm i -g leak-cli) or install Node/npm to use npx fallback."
   exit 1
 }
 
@@ -51,12 +45,19 @@ cd "$REPO_DIR"
 # Build args for `leak leak ...`
 ARGS=("leak")
 
-# Determine effective local port for display purposes.
+# Determine effective local port for display purposes and public confirmation state.
 PORT=4021
+HAS_PUBLIC=0
+HAS_PUBLIC_CONFIRM=0
 PREV=""
 for ARG in "$@"; do
   if [ "$PREV" = "--port" ]; then
     PORT="$ARG"
+    PREV=""
+    continue
+  fi
+  if [ "$PREV" = "--public-confirm" ]; then
+    HAS_PUBLIC_CONFIRM=1
     PREV=""
     continue
   fi
@@ -67,15 +68,39 @@ for ARG in "$@"; do
     --port=*)
       PORT="${ARG#--port=}"
       ;;
+    --public)
+      HAS_PUBLIC=1
+      ;;
+    --public-confirm)
+      HAS_PUBLIC_CONFIRM=1
+      PREV="--public-confirm"
+      ;;
+    --public-confirm=*)
+      HAS_PUBLIC_CONFIRM=1
+      ;;
   esac
 done
 
+if [ "$HAS_PUBLIC" -eq 1 ] && [ "$HAS_PUBLIC_CONFIRM" -eq 0 ]; then
+  if [ -t 0 ] && [ -t 1 ]; then
+    echo "[leak-skill] You are about to expose a local file to the public internet."
+    read -r -p "[leak-skill] Type ${PUBLIC_CONFIRM_PHRASE} to continue: " CONFIRM
+    if [ "$CONFIRM" != "$PUBLIC_CONFIRM_PHRASE" ]; then
+      echo "[leak-skill] Public exposure confirmation failed. Aborting."
+      exit 1
+    fi
+    ARGS+=("--public-confirm" "$PUBLIC_CONFIRM_PHRASE")
+  else
+    echo "[leak-skill] ERROR: --public requires --public-confirm ${PUBLIC_CONFIRM_PHRASE} in non-interactive mode."
+    exit 1
+  fi
+fi
+
 # Pass through all flags.
-# NOTE: we intentionally don't try to interpret or validate; leak.js already does that.
 ARGS+=("$@")
 
 # If --public is used, extract the tunnel URL and print a share link at the end.
-if printf '%s\n' "$@" | grep -q -- '--public'; then
+if [ "$HAS_PUBLIC" -eq 1 ]; then
   TMP="$(mktemp)"
   set +e
   run_leak "${ARGS[@]}" 2>&1 | tee "$TMP"

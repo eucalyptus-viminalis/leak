@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Hardened buyer key handling:
+  - removed support for `--buyer-private-key` command-argument input
+  - added `--buyer-private-key-file` and `--buyer-private-key-stdin`
+- Added seller publish safety gates in `leak` CLI:
+  - artifact must be a regular file (directories/symlinks rejected)
+  - sensitive-path blocking by default with explicit dual-flag override
+  - required public exposure confirmation (`--public-confirm I_UNDERSTAND_PUBLIC_EXPOSURE` for non-interactive mode)
+- Removed auto-install/git-clone skill fallback flow and switched skill helper scripts to runtime resolution only:
+  - use local `leak` binary when available
+  - else pinned `npx -y leak-cli@2026.2.14`
+- Updated `skills/leak/SKILL.md` with explicit safety policy and secure key-handling instructions.
+
 ## [2026.2.14]
 
 ### Added
