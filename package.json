@@ -24,7 +24,15 @@
     "cli": "node scripts/cli.js",
     "buyer": "node scripts/buyer_test.js",
     "leak": "node scripts/leak.js",
-    "buy": "node scripts/buy.js"
+    "buy": "node scripts/buy.js",
+    "check:version-sync": "node scripts/check_version_sync.js",
+    "check:changelog-version": "node scripts/check_changelog_version.js",
+    "check:no-local-paths": "node scripts/check_no_local_paths.js",
+    "check:syntax": "node --check src/index.js && node --check scripts/cli.js && node --check scripts/leak.js && node --check scripts/buy.js && node --check scripts/config.js",
+    "check:smoke": "node scripts/cli.js --help && node scripts/leak.js --help && node scripts/buy.js --help && node scripts/config.js --help",
+    "check:release": "npm run check:version-sync && npm run check:syntax && npm run check:smoke && npm run check:no-local-paths && npm pack --dry-run --cache ./.npm-cache",
+    "release:beta": "npm publish --tag beta --provenance",
+    "release:latest": "npm publish --tag latest --provenance"
   },
   "keywords": [
     "x402",

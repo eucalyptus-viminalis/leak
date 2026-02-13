@@ -483,6 +483,27 @@ Release rules:
 
 ---
 
+## Maintainer Release Process
+
+- Run local release preflight:
+  - `npm run check:release`
+- Use `beta` dist-tag before promoting to `latest`:
+  - `npm publish --tag beta`
+  - `npm dist-tag add leak-cli@<version> latest`
+- Keep versions synchronized:
+  - `package.json`
+  - `skills/leak/SKILL.md`
+- Ensure `CHANGELOG.md` has a section for the stable release version before tagging.
+- Use tag format `v<version>` for stable GitHub releases.
+
+Maintainer references:
+- `RELEASE.md` (weekly lifecycle + release checklist)
+- `CONTRIBUTING.md` (PR/release expectations)
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
+
+---
+
 ## Notes
 
 ### Legacy header support

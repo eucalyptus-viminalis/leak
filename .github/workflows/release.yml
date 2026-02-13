@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "npm dist-tag to publish"
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+          - latest
+      npm_publish:
+        description: "Publish to npm"
+        required: true
+        default: false
+        type: boolean
+      create_github_release:
+        description: "Create a draft GitHub release"
+        required: true
+        default: true
+        type: boolean
+      tag_name:
+        description: "Tag for GitHub release (e.g. v2026.2.12). Optional for manual beta-only runs"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine release metadata
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version)")
+          echo "PKG_VERSION=$PKG_VERSION" >> "$GITHUB_ENV"
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            CHANNEL="latest"
+            SHOULD_PUBLISH="false"
+            SHOULD_CREATE_RELEASE="true"
+            TAG_NAME="${GITHUB_REF_NAME}"
+          else
+            CHANNEL="${{ inputs.release_channel }}"
+            SHOULD_PUBLISH="${{ inputs.npm_publish }}"
+            SHOULD_CREATE_RELEASE="${{ inputs.create_github_release }}"
+            TAG_NAME="${{ inputs.tag_name }}"
+          fi
+
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
+          echo "SHOULD_PUBLISH=$SHOULD_PUBLISH" >> "$GITHUB_ENV"
+          echo "SHOULD_CREATE_RELEASE=$SHOULD_CREATE_RELEASE" >> "$GITHUB_ENV"
+          echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
+
+          if [ -n "$TAG_NAME" ]; then
+            if [ "$TAG_NAME" != "v$PKG_VERSION" ]; then
+              echo "Tag/version mismatch: tag=$TAG_NAME package=$PKG_VERSION"
+              exit 1
+            fi
+          fi
+
+      - name: Version sync check
+        run: npm run check:version-sync
+
+      - name: Changelog gate (stable/tagged releases)
+        if: env.CHANNEL == 'latest' || env.TAG_NAME != ''
+        env:
+          RELEASE_VERSION: ${{ env.PKG_VERSION }}
+        run: npm run check:changelog-version
+
+      - name: Syntax checks
+        run: npm run check:syntax
+
+      - name: CLI smoke checks
+        run: npm run check:smoke
+
+      - name: Local path guard
+        run: npm run check:no-local-paths
+
+      - name: Package dry run
+        run: npm pack --dry-run --cache ./.npm-cache
+
+      - name: Publish to npm
+        if: env.SHOULD_PUBLISH == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish --tag "$CHANNEL" --provenance
+          npm view leak-cli dist-tags
+
+      - name: Create draft GitHub release
+        if: env.SHOULD_CREATE_RELEASE == 'true' && env.TAG_NAME != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          draft: true
+          generate_release_notes: true
+          body_path: .github/release-template.md
