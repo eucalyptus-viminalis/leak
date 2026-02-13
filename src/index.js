@@ -630,7 +630,7 @@ app.get("/.well-known/leak", (req, res) => {
       error: "sale ended",
       skill: {
         name: "leak",
-        description: "Download x402-gated content from a time-limited leak store",
+        description: "Sell or buy x402-gated digital content using the leak CLI tool",
         source: "clawhub",
         install_command: "clawhub install leak",
       },
@@ -642,7 +642,7 @@ app.get("/.well-known/leak", (req, res) => {
   res.json({
     skill: {
       name: "leak",
-      description: "Download x402-gated content from a time-limited leak store",
+      description: "Sell or buy x402-gated digital content using the leak CLI tool",
       source: "clawhub",
       install_command: "clawhub install leak",
     },
