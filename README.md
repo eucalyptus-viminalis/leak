@@ -105,6 +105,14 @@ Security note: use a dedicated buyer key with limited funds.
 
 Under the hood, the skill scripts try `leak` on PATH first and fall back to `npx -y leak-cli@2026.2.14` for one-off usage if needed.
 
+Recommended first-time agent UX for unknown URLs:
+- ask only for skill-install approval (`clawhub install leak`)
+- ask for an existing buyer key file path (default mode)
+- if user opts in and no key exists, create `./.leak/buyer.key` (hot wallet; fund minimally; user must back it up)
+- if workspace is a git repo, add `./.leak/buyer.key` to `.gitignore` so it is not tracked
+- run: `bash skills/leak/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file <buyer_key_file_path>` (or `./.leak/buyer.key` for generated fallback)
+- avoid protocol deep-dives unless the user explicitly asks for x402 internals
+
 ### Next: Mainnet checklist (optional)
 
 Warning: switching only `CHAIN_ID` to mainnet is not sufficient.

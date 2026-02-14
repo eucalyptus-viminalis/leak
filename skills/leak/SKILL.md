@@ -32,9 +32,10 @@ This skill operates the `leak` CLI tool:
 
 Follow these rules every time:
 1. Never request, store, or pass raw private keys in command arguments.
-2. Do not create wallets or persist keys on behalf of users in this skill.
+2. Do not create wallets by default. Wallet creation is allowed only as an explicit user opt-in fallback in the buyer flow.
 3. Require explicit user confirmation of the file path before publishing.
 4. Require explicit user consent before internet exposure (`--public`).
+5. Never print private key material in normal output.
 
 ## Command Resolution
 
@@ -99,6 +100,65 @@ Share the promo link (`/`) in social posts.
 ## Buy Content (buyer)
 
 Activate when user asks to buy/download a leak URL.
+
+### Buyer Fast Path Protocol (required)
+
+Use this default conversation sequence for unknown leak links:
+1. Install `leak` if missing.
+2. Ask for an existing buyer key file path.
+3. If the user does not have one, offer this fallback:
+
+`I can generate a fresh buyer key at ./.leak/buyer.key and continue. This is a hot wallet, so keep funds minimal and back up the key safely.`
+
+4. Only if the user explicitly agrees, run the Opt-in Key Creation Subflow below.
+5. Run:
+
+```bash
+bash skills/leak/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file <buyer_key_file_path>
+```
+
+6. Report saved file path and bytes downloaded.
+
+Default key mode is `--buyer-private-key-file`. Only use `--buyer-private-key-stdin` if the user asks for stdin flow.
+
+Do not:
+1. Ask for raw private key text in chat.
+2. Start with manual x402 transfer/signing explanations.
+3. Present multiple speculative option trees before attempting the buy script.
+
+If the user explicitly asks protocol details, then explain x402 internals.
+
+### Opt-in Key Creation Subflow (deterministic)
+
+Use this subflow only after explicit user consent to create a key:
+1. Confirm destination path: `./.leak/buyer.key`.
+2. Create directory and key file with owner-only permissions:
+  - directory: `0700`
+  - key file: `0600`
+3. Write private key as a single hex line in the key file (no `0x` prefix).
+4. Do not print key material in normal output. It is acceptable to show only the derived wallet address.
+5. If current workspace is a git repository, tell the user you will add the key path to `.gitignore` to prevent tracking, then apply idempotently:
+
+```bash
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  touch .gitignore
+  grep -qxF "./.leak/buyer.key" .gitignore || echo "./.leak/buyer.key" >> .gitignore
+fi
+```
+
+6. Continue buyer flow using:
+
+```bash
+bash skills/leak/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file ./.leak/buyer.key
+```
+
+### Buyer first-response template
+
+Use this shape for first reply after receiving a leak URL:
+1. Confirm link type (promo `/` or `/download`).
+2. Request install approval: `clawhub install leak`.
+3. Ask for existing buyer key file path.
+4. Include concise alternative: `I can create one safely in ./.leak/buyer.key if you want.`
 
 ### Key handling requirements
 
