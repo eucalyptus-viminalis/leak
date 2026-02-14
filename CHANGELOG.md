@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - unpaid `GET /download` responses now include HTML fast-path instructions while preserving `402` + `PAYMENT-REQUIRED`
   - RFC skill markdown (`/.well-known/skills/leak/SKILL.md`) now includes install-once + key-file default flow guidance
 - Updated `skills/leak/SKILL.md` and README buyer flow docs to require short, execution-first responses and defer x402 protocol deep-dives unless explicitly requested.
+- Updated buyer skill policy to allow explicit opt-in key creation fallback:
+  - default remains existing key-file flow
+  - on user request, agent may generate `./.leak/buyer.key` with owner-only permissions
+  - when in a git workspace, agent should add `./.leak/buyer.key` to `.gitignore` idempotently
 
 ## [2026.2.15-beta.0]
 
