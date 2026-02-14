@@ -134,9 +134,21 @@ Default recommendation:
 
 Commands:
 
+Stable:
+
 ```bash
 openclaw clawhub validate --cwd skills/leak
 openclaw clawhub publish --cwd skills/leak --target public
+```
+
+Prerelease / Beta:
+
+```bash
+clawhub publish skills/leak \                                   
+  --slug leak \
+  --version <beta-version> \
+  --tags beta \
+  --changelog "<changes>"
 ```
 
 Post-publish checks:
