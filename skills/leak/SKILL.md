@@ -9,7 +9,7 @@ metadata:
     os: ["darwin", "linux"]
     requires:
       env:
-      bins: ["leak"]
+      bins: ["node", "leak"]
     install:
       - kind: node
         package: leak-cli
