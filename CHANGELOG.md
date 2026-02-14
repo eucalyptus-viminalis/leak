@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.2.15-beta.1]
+
 ### Changed
 
 - Added an explicit buyer fast-path contract across discovery surfaces so unknown agents can complete the leak buy flow with concise guidance:
