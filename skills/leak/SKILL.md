@@ -119,12 +119,18 @@ bash skills/leak/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-fi
 
 6. Report saved file path and bytes downloaded.
 
+Funding rule for x402 buys:
+- Use only the payment token/asset and amount quoted by the server `402 Payment Required` response (for example, `0.01 USDC`).
+- Do not require assets other than the one specified in the 402 response for gas in standard x402-gated download guidance.
+- Mention gas only if `leak buy` returns an explicit gas-related error.
+
 Default key mode is `--buyer-private-key-file`. Only use `--buyer-private-key-stdin` if the user asks for stdin flow.
 
 Do not:
 1. Ask for raw private key text in chat.
 2. Start with manual x402 transfer/signing explanations.
 3. Present multiple speculative option trees before attempting the buy script.
+4. Tell the user they need ETH for gas for the standard x402 buy flow if that asset isn't specified in the 402 response.
 
 If the user explicitly asks protocol details, then explain x402 internals.
 
@@ -159,6 +165,7 @@ Use this shape for first reply after receiving a leak URL:
 2. Request install approval: `clawhub install leak`.
 3. Ask for existing buyer key file path.
 4. Include concise alternative: `I can create one safely in ./.leak/buyer.key if you want.`
+5. If funding guidance is needed, reference the quoted `402` payment token amount (not ETH gas).
 
 ### Key handling requirements
 
