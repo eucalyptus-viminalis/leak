@@ -8,6 +8,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { spawn, spawnSync } from "node:child_process";
 import { isAddress } from "viem";
 import { defaultFacilitatorUrlForMode, readConfig } from "./config_store.js";
+import { resolveSupportedChain } from "../src/chain_meta.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -330,7 +331,17 @@ async function main() {
     process.exit(1);
   }
 
-  const network = args.network || process.env.CHAIN_ID || configDefaults.chainId || "eip155:84532";
+  const networkInput = args.network || process.env.CHAIN_ID || configDefaults.chainId || "eip155:84532";
+  let network;
+  let networkName;
+  try {
+    const networkMeta = resolveSupportedChain(networkInput);
+    network = networkMeta.caip2;
+    networkName = networkMeta.name;
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
   const port = Number(args.port || process.env.PORT || configDefaults.port || 4021);
   const facilitatorMode = (
     process.env.FACILITATOR_MODE || configDefaults.facilitatorMode || "testnet"
@@ -419,7 +430,7 @@ async function main() {
   console.log(`- price:  ${prompted.price} USDC`);
   console.log(`- window: ${prompted.windowSeconds}s`);
   console.log(`- to:     ${payTo}`);
-  console.log(`- net:    ${network}`);
+  console.log(`- net:    ${network} (${networkName})`);
   console.log(`- mode:   ${confirmationPolicy}`);
   console.log(`- facilitator_mode: ${facilitatorMode}`);
   console.log(`- facilitator_url:  ${facilitatorUrl}`);

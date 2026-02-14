@@ -14,6 +14,7 @@ import {
   readConfig,
   writeConfig,
 } from "./config_store.js";
+import { resolveSupportedChain } from "../src/chain_meta.js";
 
 const ALLOWED_FACILITATOR_MODES = new Set(["testnet", "cdp_mainnet"]);
 const ALLOWED_CONFIRMATION_POLICIES = new Set(["confirmed", "optimistic"]);
@@ -217,11 +218,21 @@ async function runWizard({ writeEnv }) {
       sellerPayTo = await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", sellerPayTo);
     }
 
-    const chainId = await askWithDefault(
+    let chainIdInput = await askWithDefault(
       rl,
       "CHAIN_ID",
       existing.chainId || "eip155:84532",
     );
+    let chainId;
+    while (true) {
+      try {
+        chainId = resolveSupportedChain(chainIdInput).caip2;
+        break;
+      } catch (err) {
+        console.error(err.message || String(err));
+        chainIdInput = await askWithDefault(rl, "CHAIN_ID", chainIdInput || "eip155:84532");
+      }
+    }
 
     let facilitatorMode = await askWithDefault(
       rl,

@@ -9,6 +9,7 @@ import { x402ResourceServer } from "@x402/core/server";
 import { x402HTTPResourceServer, HTTPFacilitatorClient } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { isAddress } from "viem";
+import { resolveSupportedChain } from "./chain_meta.js";
 
 dotenv.config();
 
@@ -80,7 +81,7 @@ const FACILITATOR_URL = (
 ).trim();
 const SELLER_PAY_TO = String(process.env.SELLER_PAY_TO || process.env.PAY_TO || "").trim();
 const PRICE_USD = process.env.PRICE_USD || "1.00";
-const CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
+const RAW_CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
 const ARTIFACT_PATH = process.env.ARTIFACT_PATH || process.env.PROTECTED_FILE;
 const WINDOW_SECONDS = Number(process.env.WINDOW_SECONDS || 3600);
 const MAX_GRANTS = parsePositiveInt(process.env.MAX_GRANTS, 10000);
@@ -110,7 +111,19 @@ const LEGACY_DISCOVERY_DEPRECATION =
 const SALE_START_TS = parsePositiveInt(process.env.SALE_START_TS, now());
 const SALE_END_TS = parsePositiveInt(process.env.SALE_END_TS, SALE_START_TS + WINDOW_SECONDS);
 const ENDED_WINDOW_SECONDS = parseNonNegativeInt(process.env.ENDED_WINDOW_SECONDS, 0);
-const IS_BASE_MAINNET = CHAIN_ID === "eip155:8453";
+
+let CHAIN_META;
+try {
+  CHAIN_META = resolveSupportedChain(RAW_CHAIN_ID);
+} catch (err) {
+  console.error(err?.message || String(err));
+  process.exit(1);
+}
+
+const CHAIN_ID = CHAIN_META.caip2;
+const CHAIN_NAME = CHAIN_META.name;
+const CHAIN_NUMERIC_ID = CHAIN_META.id;
+const IS_BASE_MAINNET = CHAIN_NUMERIC_ID === 8453;
 
 if (!new Set(["testnet", "cdp_mainnet"]).has(FACILITATOR_MODE)) {
   console.error("Invalid FACILITATOR_MODE. Supported values: testnet, cdp_mainnet");
@@ -307,7 +320,7 @@ function promoModel(req) {
   const ogTitle = OG_TITLE || ARTIFACT_NAME;
   const ogDescription =
     OG_DESCRIPTION ||
-    `Pay ${PRICE_USD} on ${CHAIN_ID} to unlock ${ARTIFACT_NAME}. Access is time-limited and agent-assisted via /download.`;
+    `$${PRICE_USD} to unlock ${ARTIFACT_NAME}`;
 
   return {
     baseUrl,
@@ -570,8 +583,8 @@ function renderPromoPage(model, { ended }) {
     <h1>${escapeHtml(pageTitle)}</h1>
 
     <div class="kv"><strong>Price:</strong> ${escapeHtml(PRICE_USD)} USD equivalent</div>
-    <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_ID)}</div>
-    <div class="kv"><strong>Sale end:</strong> ${escapeHtml(expiresIso)}</div>
+    <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_NAME)} (${escapeHtml(CHAIN_ID)})</div>
+    <div class="kv"><strong>Sale end:</strong> <span id="sale-end-local" data-sale-end-iso="${escapeHtml(expiresIso)}">${escapeHtml(expiresIso)}</span></div>
     ${renderAgentQuickPathHtmlBlock(fastPath)}
 
     <div class="prompt-head">
@@ -581,7 +594,7 @@ function renderPromoPage(model, { ended }) {
     </div>
     <pre id="human-action-text">${escapeHtml(humanActionText)}</pre>
     <p class="install-note">
-      Need help setting this up? Install leak at
+      Want to know more about <code>leak</code>? Visit
       <a href="https://github.com/eucalyptus-viminalis/leak">github.com/eucalyptus-viminalis/leak</a>
       or search for leak on clawhub.
     </p>
@@ -591,6 +604,21 @@ function renderPromoPage(model, { ended }) {
       const button = document.getElementById("copy-link-btn");
       const status = document.getElementById("copy-link-status");
       const promoUrl = ${toSafeJsonForScript(model.promoUrl)};
+      const saleEndLocal = document.getElementById("sale-end-local");
+
+      if (saleEndLocal) {
+        const saleEndIso = saleEndLocal.getAttribute("data-sale-end-iso") || "";
+        const saleEndDate = new Date(saleEndIso);
+        if (!Number.isNaN(saleEndDate.getTime())) {
+          try {
+            const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+            saleEndLocal.textContent = formatter.format(saleEndDate) + " (local time)";
+          } catch {
+            saleEndLocal.textContent = saleEndDate.toLocaleString() + " (local time)";
+          }
+        }
+      }
+
       if (!button || !promoUrl) return;
 
       const setStatus = (text) => {
@@ -632,7 +660,7 @@ function renderPromoPage(model, { ended }) {
 function renderOgSvg(req) {
   const model = promoModel(req);
   const title = model.ogTitle;
-  const subtitle = `Pay ${PRICE_USD} on ${CHAIN_ID}`;
+  const subtitle = `$${PRICE_USD} on ${CHAIN_NAME}`;
   const status = saleEnded() ? "ENDED" : "LIVE";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -645,10 +673,10 @@ function renderOgSvg(req) {
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
   <rect x="64" y="64" width="1072" height="502" rx="18" fill="#ffffff" stroke="#bdbdae"/>
-  <text x="96" y="170" font-size="32" font-family="monospace" fill="#222">${escapeXml(status)} LEAK</text>
+  <text x="96" y="170" font-size="32" font-family="monospace" fill="#222">${escapeXml(status)}</text>
   <text x="96" y="250" font-size="52" font-family="monospace" fill="#111">${escapeXml(title)}</text>
   <text x="96" y="330" font-size="30" font-family="monospace" fill="#333">${escapeXml(subtitle)}</text>
-  <text x="96" y="404" font-size="22" font-family="monospace" fill="#444">x402 via /download</text>
+  <text x="96" y="404" font-size="22" font-family="monospace" fill="#444">Share this link with your OpenClaw agent to download</text>
 </svg>`;
 }
 
