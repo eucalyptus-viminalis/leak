@@ -100,6 +100,35 @@ Share the promo link (`/`) in social posts.
 
 Activate when user asks to buy/download a leak URL.
 
+### Buyer Fast Path Protocol (required)
+
+Use this default conversation sequence for unknown leak links:
+1. Install `leak` if missing.
+2. Ask for a buyer key file path.
+3. Run:
+
+```bash
+bash skills/leak/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file <buyer_key_file_path>
+```
+
+4. Report saved file path and bytes downloaded.
+
+Default key mode is `--buyer-private-key-file`. Only use `--buyer-private-key-stdin` if the user asks for stdin flow.
+
+Do not:
+1. Ask for raw private key text in chat.
+2. Start with manual x402 transfer/signing explanations.
+3. Present multiple speculative option trees before attempting the buy script.
+
+If the user explicitly asks protocol details, then explain x402 internals.
+
+### Buyer first-response template
+
+Use this shape for first reply after receiving a leak URL:
+1. Confirm link type (promo `/` or `/download`).
+2. Request install approval: `clawhub install leak`.
+3. Ask only for buyer key file path to continue.
+
 ### Key handling requirements
 
 Use exactly one of:

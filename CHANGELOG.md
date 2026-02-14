@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Added an explicit buyer fast-path contract across discovery surfaces so unknown agents can complete the leak buy flow with concise guidance:
+  - promo page (`/`) now includes an "Agent Quick Path" block
+  - unpaid `GET /download` responses now include HTML fast-path instructions while preserving `402` + `PAYMENT-REQUIRED`
+  - RFC skill markdown (`/.well-known/skills/leak/SKILL.md`) now includes install-once + key-file default flow guidance
+- Updated `skills/leak/SKILL.md` and README buyer flow docs to require short, execution-first responses and defer x402 protocol deep-dives unless explicitly requested.
+
 ## [2026.2.15-beta.0]
 
 ### Changed

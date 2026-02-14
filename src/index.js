@@ -358,15 +358,100 @@ ${SKILL_DESCRIPTION}
 - Status: ${resource.status}
 - Sale ends: ${resource.sale_end}
 
-## Agent Flow
+## Buyer Fast Path (for unknown agents)
+1. Ask the user for approval to install the skill once.
+2. Install: \`${SKILL_INSTALL_COMMAND}\`
+3. Load the skill and continue with Buyer Fast Path.
+
+Do not explain x402 internals unless the user explicitly asks.
+
+## Discovery Fallback
 1. Read resource metadata from \`/.well-known/skills/${SKILL_NAME}/resource.json\`.
 2. Use \`download_url\` for x402 purchase and token mint.
-3. Download the file from \`/download?token=...\` and save it locally.
+3. Download from \`/download?token=...\` and save locally.
 
 ## CLI
 - Install: \`${SKILL_INSTALL_COMMAND}\`
 - Buy: \`leak buy <promo_or_download_url> --buyer-private-key-file ./buyer.key\`
 `;
+}
+
+function buildAgentQuickPath(promoUrl, downloadUrl) {
+  const safePromoUrl = String(promoUrl || "").trim();
+  const safeDownloadUrl = String(downloadUrl || "").trim();
+  const buyTarget = safePromoUrl || safeDownloadUrl || "<promo_or_download_url>";
+  const buyScriptCommand = `bash skills/leak/scripts/buy.sh "${buyTarget}" --buyer-private-key-file <buyer_key_file_path>`;
+
+  return {
+    promoUrl: safePromoUrl,
+    downloadUrl: safeDownloadUrl,
+    installCommand: SKILL_INSTALL_COMMAND,
+    buyTarget,
+    buyScriptCommand,
+  };
+}
+
+function urlsForQuickPathFromRequestUrl(requestUrl) {
+  try {
+    const parsed = new URL(String(requestUrl || ""));
+    const origin = parsed.origin;
+    return {
+      promoUrl: `${origin}/`,
+      downloadUrl: `${origin}/download`,
+    };
+  } catch {
+    const fallbackBase = isAbsoluteHttpUrl(PUBLIC_BASE_URL)
+      ? PUBLIC_BASE_URL.replace(/\/+$/, "")
+      : `http://127.0.0.1:${PORT}`;
+    return {
+      promoUrl: `${fallbackBase}/`,
+      downloadUrl: `${fallbackBase}/download`,
+    };
+  }
+}
+
+function renderAgentQuickPathHtmlBlock(fastPath) {
+  return `<section class="agent-quick-path">
+      <h2>Agent Quick Path</h2>
+      <ol>
+        <li>Ask for approval to install the skill once.</li>
+        <li>Install: <code>${escapeHtml(fastPath.installCommand)}</code></li>
+        <li>Load the skill and continue with Buyer Fast Path.</li>
+      </ol>
+      <p><strong>Rule:</strong> do not explain x402 internals unless the user explicitly asks.</p>
+    </section>`;
+}
+
+function renderUnpaidDownloadGuidancePage(requestUrl) {
+  const urls = urlsForQuickPathFromRequestUrl(requestUrl);
+  const fastPath = buildAgentQuickPath(urls.promoUrl, urls.downloadUrl);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Payment Required - leak</title>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 24px; background: #f7f7f5; color: #1f1f1f; }
+    .card { max-width: 760px; margin: 0 auto; border: 1px solid #d8d8d0; background: #fff; border-radius: 10px; padding: 20px; }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    h2 { margin: 0 0 10px; font-size: 18px; }
+    p { line-height: 1.5; }
+    code, pre { background: #f0f0eb; border-radius: 6px; padding: 2px 6px; }
+    pre { padding: 10px; overflow-x: auto; }
+    ol { margin: 10px 0 12px 20px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>402 Payment Required</h1>
+    <p>This URL is paywalled. Use the leak skill fast path below.</p>
+    <p><strong>Promo URL:</strong> <code>${escapeHtml(fastPath.promoUrl)}</code></p>
+    <p><strong>x402 URL:</strong> <code>${escapeHtml(fastPath.downloadUrl)}</code></p>
+    ${renderAgentQuickPathHtmlBlock(fastPath)}
+  </main>
+</body>
+</html>`;
 }
 
 function sendSkillIndex(req, res) {
@@ -408,6 +493,7 @@ function renderPromoPage(model, { ended }) {
     ? `This leak has ended. ${model.ogDescription}`
     : model.ogDescription;
   const expiresIso = new Date(model.saleEndTs * 1000).toISOString();
+  const fastPath = buildAgentQuickPath(model.promoUrl, model.downloadUrl);
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -433,7 +519,7 @@ function renderPromoPage(model, { ended }) {
   };
   const safeJsonLd = toSafeJsonForScript(jsonLd);
 
-  const examplePrompt = `Buy this and save it: ${model.downloadUrl}`;
+  const humanActionText = "Just send the link to this page to your agent";
 
   return `<!doctype html>
 <html lang="en">
@@ -472,26 +558,28 @@ function renderPromoPage(model, { ended }) {
     .copy-status { font-size: 12px; color: #3f3f3f; min-height: 1em; }
     .install-note { margin-top: 16px; font-size: 13px; color: #2f2f2f; }
     .install-note a { color: #1f1f1f; }
+    .agent-quick-path { margin: 16px 0; padding: 14px; border: 1px solid #d8d8d0; border-radius: 8px; background: #fafaf6; }
+    .agent-quick-path h2 { margin: 0 0 8px; font-size: 18px; }
+    .agent-quick-path ol { margin: 8px 0 8px 20px; }
+    .agent-quick-path p { margin: 8px 0 0; }
   </style>
 </head>
 <body>
   <main class="card">
     <div class="state">${escapeHtml(stateLabel)}</div>
     <h1>${escapeHtml(pageTitle)}</h1>
-    <p>${escapeHtml(description)}</p>
-    <p><strong>Agent-assisted purchase:</strong> this release is designed to be bought through an agent using the x402 endpoint below.</p>
 
     <div class="kv"><strong>Price:</strong> ${escapeHtml(PRICE_USD)} USD equivalent</div>
     <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_ID)}</div>
     <div class="kv"><strong>Sale end:</strong> ${escapeHtml(expiresIso)}</div>
+    ${renderAgentQuickPathHtmlBlock(fastPath)}
 
-    <p><strong>x402 URL</strong><br /><code>${escapeHtml(model.downloadUrl)}</code></p>
     <div class="prompt-head">
-      <p><strong>Example agent prompt</strong></p>
-      <button class="copy-btn" id="copy-agent-prompt" type="button" aria-label="Copy example agent prompt">Copy prompt</button>
-      <span class="copy-status" id="copy-prompt-status" aria-live="polite"></span>
+      <p><strong>Human action</strong></p>
+      <button class="copy-btn" id="copy-link-btn" type="button" aria-label="Copy page link">Copy link</button>
+      <span class="copy-status" id="copy-link-status" aria-live="polite"></span>
     </div>
-    <pre id="example-agent-prompt">${escapeHtml(examplePrompt)}</pre>
+    <pre id="human-action-text">${escapeHtml(humanActionText)}</pre>
     <p class="install-note">
       Need help setting this up? Install leak at
       <a href="https://github.com/eucalyptus-viminalis/leak">github.com/eucalyptus-viminalis/leak</a>
@@ -500,25 +588,23 @@ function renderPromoPage(model, { ended }) {
   </main>
   <script>
     (() => {
-      const button = document.getElementById("copy-agent-prompt");
-      const pre = document.getElementById("example-agent-prompt");
-      const status = document.getElementById("copy-prompt-status");
-      if (!button || !pre) return;
+      const button = document.getElementById("copy-link-btn");
+      const status = document.getElementById("copy-link-status");
+      const promoUrl = ${toSafeJsonForScript(model.promoUrl)};
+      if (!button || !promoUrl) return;
 
       const setStatus = (text) => {
         if (status) status.textContent = text;
       };
 
       button.addEventListener("click", async () => {
-        const text = pre.textContent || "";
-        if (!text) return;
-        const original = "Copy prompt";
+        const original = "Copy link";
         try {
           if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text);
+            await navigator.clipboard.writeText(promoUrl);
           } else {
             const ta = document.createElement("textarea");
-            ta.value = text;
+            ta.value = promoUrl;
             ta.setAttribute("readonly", "");
             ta.style.position = "absolute";
             ta.style.left = "-9999px";
@@ -637,6 +723,10 @@ const routes = {
     ],
     description: ARTIFACT_NAME,
     mimeType: MIME_TYPE,
+    unpaidResponseBody: async (context) => ({
+      contentType: "text/html; charset=utf-8",
+      body: renderUnpaidDownloadGuidancePage(context?.adapter?.getUrl?.()),
+    }),
   },
 };
 
