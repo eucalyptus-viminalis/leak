@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.2.15-beta.0]
+
 ### Changed
 
 - Hardened buyer key handling:
@@ -18,7 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Removed auto-install/git-clone skill fallback flow and switched skill helper scripts to runtime resolution only:
   - use local `leak` binary when available
   - else pinned `npx -y leak-cli@2026.2.14`
+  - removed `skills/leak/scripts/ensure_leak.sh`
 - Updated `skills/leak/SKILL.md` with explicit safety policy and secure key-handling instructions.
+- Updated buyer-facing docs and discovery snippets to use secure key inputs (`--buyer-private-key-file` / `--buyer-private-key-stdin`) instead of raw key args.
+- Reworked `RELEASE.md` into an event-driven, beta-first runbook with clear same-day prerelease steps and stable promotion flow.
+- Updated `scripts/check_version_sync.js` to accept prerelease versions (`YYYY.M.P-beta.N`) in addition to stable versions (`YYYY.M.P`).
 
 ## [2026.2.14]
 

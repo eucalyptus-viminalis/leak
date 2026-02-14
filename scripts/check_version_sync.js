@@ -26,8 +26,8 @@ function extractSkillVersion(skillMd) {
   return versionLine.slice("version:".length).trim();
 }
 
-function isDateTripletVersion(v) {
-  return /^\d{4}\.\d{1,2}\.\d+$/.test(v);
+function isSupportedVersion(v) {
+  return /^\d{4}\.\d{1,2}\.\d+(?:-beta\.\d+)?$/.test(v);
 }
 
 const pkgPath = path.join(repoRoot, "package.json");
@@ -51,9 +51,9 @@ if (pkgVersion !== skillVersion) {
   process.exit(1);
 }
 
-if (!isDateTripletVersion(pkgVersion)) {
+if (!isSupportedVersion(pkgVersion)) {
   console.error(`[version-sync] invalid version format: ${pkgVersion}`);
-  console.error("[version-sync] expected YYYY.M.P (semver-compatible date triplet)");
+  console.error("[version-sync] expected YYYY.M.P or YYYY.M.P-beta.N");
   process.exit(1);
 }
 
