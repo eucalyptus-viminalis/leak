@@ -1,73 +1,138 @@
 # Release Playbook
 
-This project uses a weekly stable cadence with a beta pre-release channel.
+Use a beta-first flow with stable promotion when ready.
+Cadence is event-driven: release as often as needed.
 
 ## Versioning
 
-- Format: `YYYY.M.P`
-- `P` increments for each release in the same month.
-- Keep versions synchronized between:
+- Stable: `YYYY.M.P`
+- Prerelease: `YYYY.M.(P+1)-beta.N`
+- Example: after stable `2026.2.14`, use `2026.2.15-beta.0` (not `2026.2.14-beta.1`).
+- Keep versions identical in:
   - `package.json`
   - `skills/leak/SKILL.md`
 
-## Weekly Lifecycle
-
-- Monday-Tuesday: land reviewed PRs.
-- Wednesday: stabilize and finalize changelog entries.
-- Thursday morning: publish beta.
-- Thursday afternoon: validate beta install/runtime.
-- Friday: promote stable, create GitHub release, publish skill.
-
-## Preflight (Local)
+## Required Gates (Run Every Cut)
 
 ```bash
-# from repository root
-npm ci
-npm run check:version-sync
-npm run check:syntax
-npm run check:smoke
-npm run check:no-local-paths
-npm pack --dry-run --cache ./.npm-cache
+# from repo root
+npm ci --cache ./.npm-cache
+npm run check:release
+RELEASE_VERSION=<version> npm run check:changelog-version
 ```
 
-## Beta Publish
+Minimum behavior checks after install from published package:
+- `leak --help`
+- `leak config --help`
+- `leak buy --help`
+
+## Prerelease Runbook (Same-Day Iteration)
+
+### 1) Choose version
+
+First prerelease after a stable:
 
 ```bash
-npm publish --tag beta
+npm version prepatch --preid=beta --no-git-tag-version
+```
+
+Next prerelease on same train:
+
+```bash
+npm version prerelease --preid=beta --no-git-tag-version
+```
+
+### 2) Sync + changelog
+
+- Set `version:` in `skills/leak/SKILL.md` to match `package.json`.
+- Add/update release notes in `CHANGELOG.md` for this prerelease version.
+
+### 3) Run gates
+
+```bash
+RELEASE_VERSION=<version> npm run check:changelog-version
+npm run check:release
+```
+
+### 4) Commit + tag + push
+
+```bash
+git add .
+git commit -m "release: <version>"
+git tag -a v<version> -m "Release <version>"
+git push origin main
+git push origin v<version>
+```
+
+### 5) Publish npm beta
+
+```bash
+npm publish --tag beta --cache ./.npm-cache
 npm view leak-cli dist-tags
-npm i -g leak-cli@beta
-leak --help
 ```
 
-## Stable Publish
+### 6) GitHub prerelease
+
+- Create release for `v<version>`.
+- Mark as pre-release.
+
+## Stable Runbook
+
+### 1) Set stable version
 
 ```bash
-npm dist-tag add leak-cli@<version> latest
+npm version <stable-version> --no-git-tag-version
+```
+
+### 2) Sync + changelog + gates
+
+- Sync `skills/leak/SKILL.md`.
+- Move release notes into `CHANGELOG.md` section for `<stable-version>`.
+- Run required gates with `RELEASE_VERSION=<stable-version>`.
+
+### 3) Commit + tag + push
+
+```bash
+git add .
+git commit -m "release: <stable-version>"
+git tag -a v<stable-version> -m "Release <stable-version>"
+git push origin main
+git push origin v<stable-version>
+```
+
+### 4) Publish npm stable
+
+Preferred:
+
+```bash
+npm publish --tag latest --cache ./.npm-cache
 npm view leak-cli version
 npm view leak-cli dist-tags
 ```
 
-For tag-based stable workflow:
+Alternative (if exact artifact already published):
 
 ```bash
-git tag v<version>
-git push origin main --tags
+npm dist-tag add leak-cli@<stable-version> latest
 ```
 
-The release GitHub Action (`.github/workflows/release.yml`) will run checks and can publish.
+### 5) GitHub stable release
 
-## GitHub Release
-
-For each stable release:
-- Create/edit release notes with:
+- Create release for `v<stable-version>`.
+- Use sections:
   - What changed
   - Breaking changes
   - Skill updates
   - Upgrade steps
   - Rollback
-- Ensure tag matches package version (`v<version>`).
 
 ## ClawHub Skill Publish
+
+Default recommendation:
+- Publish prereleases to npm `beta`.
+- Publish to ClawHub on stable, unless explicitly testing a beta there.
+
+Commands:
 
 ```bash
 openclaw clawhub validate --cwd skills/leak
@@ -76,22 +141,11 @@ openclaw clawhub publish --cwd skills/leak --target public
 
 Post-publish checks:
 - listing version matches npm + `SKILL.md`
-- fresh-host install and one buy-flow smoke test
-
-## Required Gates (No Skip)
-
-- Version sync: npm package version == skill version.
-- Changelog updated for all user-facing changes.
-- Fresh install check from beta when available.
-- Runtime smoke checks:
-  - `leak --help`
-  - `leak config --help`
-  - minimal publish/buy path touched by changes
-- Backward compatibility for documented README flow(s).
+- one fresh-host install and buy-flow smoke test
 
 ## Hotfix Rule
 
 For critical regressions, you may skip beta. Still:
 - increment version
-- publish notes
+- publish release notes
 - include rollback guidance
