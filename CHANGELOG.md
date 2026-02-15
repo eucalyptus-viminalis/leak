@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Improved social card reliability for promo links (including Farcaster/Warpcast):
+  - default OG fallback image now uses generated raster PNG (`/og.png`) instead of SVG
+  - promo page now emits richer OG/Twitter image metadata (`og:image:secure_url`, type, dimensions, alt text)
+  - app now trusts proxy headers for canonical HTTPS metadata behind tunnel/proxy setups
+  - promo route (`GET /`) now returns `200` even after sale end so crawlers can still build previews
+- Added `HEAD` support for OG image endpoints (`/og.png`, `/og.svg`, `/og-image`) to improve crawler compatibility.
+- Updated README route and troubleshooting docs for OG preview behavior, including cache-busting guidance for refreshed link cards.
+
 ## [2026.2.15]
 
 ### Added
