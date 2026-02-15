@@ -255,6 +255,7 @@ npm run leak -- --file ./song.mp3 --pay-to 0x... --price 1 --window 1h --public 
 ```
 
 When a local image path is used for `--og-image-url`, leak serves it from `/og-image` and points OG/Twitter metadata at that endpoint.
+Without `--og-image-url`, leak serves a generated raster OG card from `/og.png` (and keeps `/og.svg` for debug/backward compatibility).
 
 This mirrors the behavior of the original Python scaffold implementation:
 
@@ -422,14 +423,15 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 
 - `GET /` promo HTML page with OG/Twitter tags
   - `200` while sale is active
-  - `410` once sale has ended
+  - `200` once sale has ended (ended state is shown in page content/metadata)
 - `GET|HEAD /.well-known/skills/index.json` RFC skill discovery index
 - `GET|HEAD /.well-known/skills/leak/SKILL.md` RFC skill metadata markdown
 - `GET|HEAD /.well-known/skills/leak/resource.json` RFC sale/resource metadata (`200` live, `410` ended)
 - `GET /.well-known/leak` legacy discovery endpoint (backward-compatible)
 - `GET /info` machine-readable JSON status (compat endpoint)
-- `GET /og-image` configured OG image file (when using local `--og-image-url` path)
-- `GET /og.svg` fallback OG image (used when `--og-image-url` is not set)
+- `GET|HEAD /og-image` configured OG image file (when using local `--og-image-url` path)
+- `GET|HEAD /og.png` generated default OG image (used when `--og-image-url` is not set)
+- `GET|HEAD /og.svg` debug/backward-compatible OG SVG
 - `GET /health` free health check
 - `GET /download` x402-protected download endpoint
   - active sale: normal x402/token flow
@@ -440,6 +442,7 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 ## Troubleshooting
 
 - **`Invalid seller payout address`** → set `--pay-to` / `SELLER_PAY_TO` to a valid Ethereum address (`0x` + 40 hex chars).
+- **Farcaster/Warpcast preview missing OG image** → prefer PNG/JPG (`--og-image-url` or default `/og.png`), ensure OG URLs are absolute `https://` (set `PUBLIC_BASE_URL` if needed), and re-share with a fresh URL variant (example: `/?v=2`) to bypass crawler cache.
 
 ---
 

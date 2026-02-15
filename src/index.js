@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { Resvg } from "@resvg/resvg-js";
 
 import { x402ResourceServer } from "@x402/core/server";
 import { x402HTTPResourceServer, HTTPFacilitatorClient } from "@x402/core/http";
@@ -100,6 +101,9 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim();
 const OG_IMAGE_PATH = OG_IMAGE_PATH_RAW
   ? (path.isAbsolute(OG_IMAGE_PATH_RAW) ? OG_IMAGE_PATH_RAW : path.join(__dirname, "..", OG_IMAGE_PATH_RAW))
   : "";
+const OG_IMAGE_CACHE_CONTROL = "public, max-age=60";
+const OG_IMAGE_WIDTH = 1200;
+const OG_IMAGE_HEIGHT = 630;
 const SKILL_NAME = "leak";
 const SKILL_DESCRIPTION = "Sell or buy x402-gated digital content using the leak CLI tool";
 const SKILL_SOURCE = "clawhub";
@@ -196,6 +200,15 @@ function imageMimeTypeFromPath(filePath) {
   if (ext === ".svg") return "image/svg+xml";
   if (ext === ".avif") return "image/avif";
   return null;
+}
+
+function imageMimeTypeFromUrl(urlString) {
+  try {
+    const parsed = new URL(String(urlString));
+    return imageMimeTypeFromPath(parsed.pathname);
+  } catch {
+    return null;
+  }
 }
 
 function classifyFacilitatorError(err) {
@@ -314,19 +327,37 @@ function promoModel(req) {
   const baseUrl = baseUrlFromReq(req);
   const promoUrl = `${baseUrl}/`;
   const downloadUrl = `${baseUrl}/download`;
-  const imageUrl = isAbsoluteHttpUrl(OG_IMAGE_URL)
-    ? OG_IMAGE_URL
-    : (OG_IMAGE_PATH ? `${baseUrl}/og-image` : `${baseUrl}/og.svg`);
   const ogTitle = OG_TITLE || ARTIFACT_NAME;
   const ogDescription =
     OG_DESCRIPTION ||
     `$${PRICE_USD} to unlock ${ARTIFACT_NAME}`;
+  const imageAlt = `${ogTitle} preview image`;
+
+  let imageUrl = `${baseUrl}/og.png`;
+  let imageType = "image/png";
+  let imageWidth = OG_IMAGE_WIDTH;
+  let imageHeight = OG_IMAGE_HEIGHT;
+  if (isAbsoluteHttpUrl(OG_IMAGE_URL)) {
+    imageUrl = OG_IMAGE_URL;
+    imageType = imageMimeTypeFromUrl(OG_IMAGE_URL) || "";
+    imageWidth = null;
+    imageHeight = null;
+  } else if (OG_IMAGE_PATH) {
+    imageUrl = `${baseUrl}/og-image`;
+    imageType = imageMimeTypeFromPath(OG_IMAGE_PATH) || "";
+    imageWidth = null;
+    imageHeight = null;
+  }
 
   return {
     baseUrl,
     promoUrl,
     downloadUrl,
     imageUrl,
+    imageType,
+    imageWidth,
+    imageHeight,
+    imageAlt,
     ogTitle,
     ogDescription,
     saleStartTs: SALE_START_TS,
@@ -531,6 +562,19 @@ function renderPromoPage(model, { ended }) {
     ],
   };
   const safeJsonLd = toSafeJsonForScript(jsonLd);
+  const secureImageUrl = model.imageUrl.startsWith("https://") ? model.imageUrl : "";
+  const ogImageSecureUrlMeta = secureImageUrl
+    ? `<meta property="og:image:secure_url" content="${escapeHtml(secureImageUrl)}" />`
+    : "";
+  const ogImageTypeMeta = model.imageType
+    ? `<meta property="og:image:type" content="${escapeHtml(model.imageType)}" />`
+    : "";
+  const ogImageWidthMeta = Number.isFinite(model.imageWidth)
+    ? `<meta property="og:image:width" content="${model.imageWidth}" />`
+    : "";
+  const ogImageHeightMeta = Number.isFinite(model.imageHeight)
+    ? `<meta property="og:image:height" content="${model.imageHeight}" />`
+    : "";
 
   const humanActionText = "Just send the link to this page to your agent";
 
@@ -547,11 +591,17 @@ function renderPromoPage(model, { ended }) {
   <meta property="og:title" content="${escapeHtml(pageTitle)}" />
   <meta property="og:description" content="${escapeHtml(description)}" />
   <meta property="og:image" content="${escapeHtml(model.imageUrl)}" />
+  ${ogImageSecureUrlMeta}
+  ${ogImageTypeMeta}
+  ${ogImageWidthMeta}
+  ${ogImageHeightMeta}
+  <meta property="og:image:alt" content="${escapeHtml(model.imageAlt)}" />
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${escapeHtml(pageTitle)}" />
   <meta name="twitter:description" content="${escapeHtml(description)}" />
   <meta name="twitter:image" content="${escapeHtml(model.imageUrl)}" />
+  <meta name="twitter:image:alt" content="${escapeHtml(model.imageAlt)}" />
 
   <script type="application/ld+json">${safeJsonLd}</script>
   <style>
@@ -680,6 +730,18 @@ function renderOgSvg(req) {
 </svg>`;
 }
 
+function renderOgPng(req) {
+  const svg = renderOgSvg(req);
+  const resvg = new Resvg(svg, {
+    fitTo: {
+      mode: "width",
+      value: OG_IMAGE_WIDTH,
+    },
+  });
+  const pngData = resvg.render();
+  return pngData.asPng();
+}
+
 // In-memory grants (v1). Later: SQLite.
 /** @type {Map<string, { token: string, expiresAt: number, downloadsLeft: number|null }>} */
 const GRANTS = new Map();
@@ -727,6 +789,7 @@ function validateAndConsumeToken(token) {
 }
 
 const app = express();
+app.set("trust proxy", true);
 
 // x402 core server + HTTP wrapper
 await preflightCdpAuth();
@@ -782,9 +845,8 @@ setInterval(() => {
 app.get("/", (req, res) => {
   const model = promoModel(req);
   const ended = saleEnded();
-  const status = ended ? 410 : 200;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  return res.status(status).send(renderPromoPage(model, { ended }));
+  return res.status(200).send(renderPromoPage(model, { ended }));
 });
 
 app.get("/info", (req, res) => {
@@ -807,8 +869,33 @@ app.get("/info", (req, res) => {
 
 app.get("/og.svg", (req, res) => {
   res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
-  res.setHeader("Cache-Control", "public, max-age=60");
+  res.setHeader("Cache-Control", OG_IMAGE_CACHE_CONTROL);
+  if (req.method === "HEAD") return res.status(200).end();
   return res.status(200).send(renderOgSvg(req));
+});
+app.head("/og.svg", (req, res) => {
+  res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+  res.setHeader("Cache-Control", OG_IMAGE_CACHE_CONTROL);
+  return res.status(200).end();
+});
+
+app.get("/og.png", (req, res) => {
+  let png;
+  try {
+    png = renderOgPng(req);
+  } catch (err) {
+    console.error(`[og] failed to render png: ${err?.message || String(err)}`);
+    return res.status(500).json({ error: "og image unavailable" });
+  }
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", OG_IMAGE_CACHE_CONTROL);
+  if (req.method === "HEAD") return res.status(200).end();
+  return res.status(200).send(png);
+});
+app.head("/og.png", (req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", OG_IMAGE_CACHE_CONTROL);
+  return res.status(200).end();
 });
 
 app.get("/og-image", (req, res) => {
@@ -835,7 +922,8 @@ app.get("/og-image", (req, res) => {
   }
 
   res.setHeader("Content-Type", contentType);
-  res.setHeader("Cache-Control", "public, max-age=60");
+  res.setHeader("Cache-Control", OG_IMAGE_CACHE_CONTROL);
+  if (req.method === "HEAD") return res.status(200).end();
   const stream = fs.createReadStream(OG_IMAGE_PATH);
   stream.on("error", () => {
     if (!res.headersSent) {
@@ -845,6 +933,30 @@ app.get("/og-image", (req, res) => {
     }
   });
   return stream.pipe(res);
+});
+app.head("/og-image", (req, res) => {
+  if (!OG_IMAGE_PATH) {
+    return res.status(404).end();
+  }
+  if (!fs.existsSync(OG_IMAGE_PATH)) {
+    return res.status(404).end();
+  }
+  let stat;
+  try {
+    stat = fs.statSync(OG_IMAGE_PATH);
+  } catch {
+    return res.status(404).end();
+  }
+  if (!stat.isFile()) {
+    return res.status(404).end();
+  }
+  const contentType = imageMimeTypeFromPath(OG_IMAGE_PATH);
+  if (!contentType) {
+    return res.status(404).end();
+  }
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", OG_IMAGE_CACHE_CONTROL);
+  return res.status(200).end();
 });
 
 app.get("/health", (req, res) => {
@@ -1053,7 +1165,7 @@ app.listen(PORT, () => {
   console.log(`download http://localhost:${PORT}/download (x402 protected)`);
   if (endedWindowActive()) {
     console.log(
-      `ended-window active until ${new Date(endedWindowCutoffTs() * 1000).toISOString()} (HTTP 410 mode)`,
+      `ended-window active until ${new Date(endedWindowCutoffTs() * 1000).toISOString()} (download endpoints HTTP 410 mode)`,
     );
   }
 });
