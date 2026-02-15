@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.2.15]
+
+### Added
+
+- Added centralized chain metadata helpers in `src/chain_meta.js` to parse CAIP-2 identifiers and enforce supported networks (Base mainnet + Base Sepolia).
+- Added promo-page localization for sale end timestamps so end users see the deadline in local time.
+
+### Changed
+
+- Enforced supported-chain validation across runtime surfaces:
+  - `leak` launch now validates `--network` / `CHAIN_ID` and exits on invalid or unsupported values
+  - `leak config` wizard now validates `CHAIN_ID` input and re-prompts until valid
+  - server boot now validates chain configuration before starting
+- Updated promo and OG presentation to use normalized chain display names and concise pricing copy.
+- Updated leak skill runtime requirements to explicitly require both `node` and `leak`.
+- Clarified x402 buyer funding policy in `skills/leak/SKILL.md`:
+  - follow the token/amount returned by the `402 Payment Required` response
+  - do not proactively require unrelated gas assets for standard flow unless an explicit gas error occurs
+- Expanded release runbook with an explicit Clawhub prerelease/beta publish command.
+
 ## [2026.2.15-beta.1]
 
 ### Changed
