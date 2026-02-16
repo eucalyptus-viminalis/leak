@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - no-payment modes stream artifact directly without x402 handshake.
 - Added buyer CLI support for `--download-code` and `--download-code-stdin`, with payment flow now conditional on receiving a `402` challenge.
 - Added CI/release terminology audit (`check:download-code-terminology`) to fail builds if banned legacy access-secret wording appears in user-facing surfaces.
+- Improved top-level CLI UX with clearer grouped help output and examples.
+- Added CLI version checks via both `leak version` and `leak --version`.
 
 ## [2026.2.17-beta.1]
 

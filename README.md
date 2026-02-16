@@ -18,6 +18,13 @@ Package name: `leak-cli`
 
 Command: `leak`
 
+Check installed CLI version:
+
+```bash
+leak version
+# or: leak --version
+```
+
 OpenClaw skill docs live in this repo at:
 - [`/skills/leak-buy`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak-buy)
 - [`/skills/leak-publish`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak-publish)
