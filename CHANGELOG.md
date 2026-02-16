@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.2.17-beta.1]
+
+### Changed
+
+- Hard-switched agent discovery and promo-page install guidance from `leak` to `leak-buy`:
+  - `SKILL_NAME` for well-known discovery is now `leak-buy`
+  - install command shown to agents is now `clawhub install leak-buy`
+- Updated `/.well-known/leak` legacy discovery payload to advertise `leak-buy` for compatibility with old endpoint consumers.
+- Removed stale promo/discovery references to legacy skill helper paths under `skills/leak/scripts`.
+- Discovery route behavior is now explicit:
+  - active: `/.well-known/skills/leak-buy/SKILL.md` and `/.well-known/skills/leak-buy/resource.json`
+  - legacy `/.well-known/skills/leak/*` paths are no longer served (hard switch).
+
 ## [2026.2.17-beta.0]
 
 ### Changed

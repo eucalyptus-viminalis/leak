@@ -2,7 +2,7 @@
 name: leak
 description: Compatibility stub for migrating from the legacy mixed leak skill to split hardened skills.
 compatibility: Requires access to the internet
-version: 2026.2.17-beta.0
+version: 2026.2.17-beta.1
 metadata:
   openclaw:
     emoji: 💦
