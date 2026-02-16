@@ -2,7 +2,7 @@
 name: leak-buy
 description: Buy and download x402-gated leak content from promo or download links using a preinstalled leak CLI.
 compatibility: Requires access to the internet
-version: 2026.2.17
+version: 2026.2.17-beta.0
 metadata:
   openclaw:
     emoji: 🛒
