@@ -18,6 +18,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Discovery route behavior is now explicit:
   - active: `/.well-known/skills/leak-buy/SKILL.md` and `/.well-known/skills/leak-buy/resource.json`
   - legacy `/.well-known/skills/leak/*` paths are no longer served (hard switch).
+- Hardened `leak-buy` command safety against shell-injection-style misuse:
+  - validates promo/download URL shape (`http(s)` only; rejects whitespace/control chars)
+  - validates buyer key file path (non-empty, no whitespace/control chars, not symlink)
+  - requires buyer key path to resolve to an existing readable regular file
+- Tightened `skills/leak-buy/SKILL.md` execution guidance:
+  - requires tokenized/quoted argv construction (no raw interpolation, no `eval`, no `sh -c`)
+  - replaced placeholder command examples with safe variable-based command forms.
 
 ## [2026.2.17-beta.0]
 
