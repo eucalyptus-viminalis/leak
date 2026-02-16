@@ -15,6 +15,14 @@ import {
   writeConfig,
 } from "./config_store.js";
 import { resolveSupportedChain } from "../src/chain_meta.js";
+import {
+  ACCESS_MODE_VALUES,
+  DEFAULT_ACCESS_MODE,
+  accessModeRequiresDownloadCode,
+  accessModeRequiresPayment,
+  isValidAccessMode,
+} from "../src/access_mode.js";
+import { hashDownloadCode } from "../src/download_code.js";
 
 const ALLOWED_FACILITATOR_MODES = new Set(["testnet", "cdp_mainnet"]);
 const ALLOWED_CONFIRMATION_POLICIES = new Set(["confirmed", "optimistic"]);
@@ -123,6 +131,31 @@ async function askOgField(rl, label, currentValue, fieldType) {
   }
 }
 
+async function askDownloadCodeHash(rl, existingHash, accessMode) {
+  if (!accessModeRequiresDownloadCode(accessMode)) return "";
+
+  if (existingHash) {
+    const prompt = new Select({
+      name: "DOWNLOAD_CODE",
+      message: "DOWNLOAD_CODE (required by selected ACCESS_MODE)",
+      choices: [
+        { name: "keep", message: "Keep existing stored download code hash" },
+        { name: "replace", message: "Replace with new download code" },
+      ],
+      initial: 0,
+    });
+    const choice = await prompt.run();
+    if (choice === "keep") return existingHash;
+  }
+
+  let raw = (await rl.question("DOWNLOAD_CODE (input visible): ")).trim();
+  while (!raw) {
+    console.error("DOWNLOAD_CODE is required for the selected ACCESS_MODE.");
+    raw = (await rl.question("DOWNLOAD_CODE (input visible): ")).trim();
+  }
+  return hashDownloadCode(raw);
+}
+
 function printShow() {
   const loaded = readConfig();
   if (loaded.error) {
@@ -157,6 +190,10 @@ function buildEnvScaffold(defaults) {
     `PRICE_USD=${defaults.priceUsd || "0.01"}`,
     `CHAIN_ID=${defaults.chainId || "eip155:84532"}`,
     `WINDOW_SECONDS=${windowSeconds ?? 3600}`,
+    "",
+    "# Access control",
+    `ACCESS_MODE=${defaults.accessMode || DEFAULT_ACCESS_MODE}`,
+    `DOWNLOAD_CODE_HASH=${defaults.downloadCodeHash || ""}`,
     "",
     "# Required when FACILITATOR_MODE=cdp_mainnet (Base mainnet path)",
     `CDP_API_KEY_ID=${defaults.cdpApiKeyId || ""}`,
@@ -206,16 +243,12 @@ async function runWizard({ writeEnv }) {
       "SELLER_PAY_TO (seller payout address)",
       existing.sellerPayTo || "",
     );
-    while (true) {
-      sellerPayTo = String(sellerPayTo || "").trim();
-      if (!sellerPayTo) {
-        console.error("SELLER_PAY_TO is required.");
-      } else if (!isAddress(sellerPayTo)) {
-        console.error("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
-      } else {
-        break;
-      }
-      sellerPayTo = await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", sellerPayTo);
+    sellerPayTo = String(sellerPayTo || "").trim();
+    while (sellerPayTo && !isAddress(sellerPayTo)) {
+      console.error("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
+      sellerPayTo = String(
+        await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", sellerPayTo),
+      ).trim();
     }
 
     let chainIdInput = await askWithDefault(
@@ -293,6 +326,44 @@ async function runWizard({ writeEnv }) {
       ).toLowerCase();
     }
 
+    let accessMode = await askWithDefault(
+      rl,
+      `ACCESS_MODE (${ACCESS_MODE_VALUES.join("|")})`,
+      existing.accessMode || DEFAULT_ACCESS_MODE,
+    );
+    accessMode = accessMode.toLowerCase();
+    while (!isValidAccessMode(accessMode)) {
+      console.error(`Invalid ACCESS_MODE. Use one of: ${ACCESS_MODE_VALUES.join(", ")}`);
+      accessMode = (
+        await askWithDefault(
+          rl,
+          "ACCESS_MODE",
+          existing.accessMode || DEFAULT_ACCESS_MODE,
+        )
+      ).toLowerCase();
+    }
+
+    if (accessModeRequiresPayment(accessMode)) {
+      while (!sellerPayTo) {
+        console.error("SELLER_PAY_TO is required for payment access modes.");
+        sellerPayTo = String(
+          await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", ""),
+        ).trim();
+      }
+      while (!isAddress(sellerPayTo)) {
+        console.error("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
+        sellerPayTo = String(
+          await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", sellerPayTo),
+        ).trim();
+      }
+    }
+
+    const downloadCodeHash = await askDownloadCodeHash(
+      rl,
+      existing.downloadCodeHash || "",
+      accessMode,
+    );
+
     const priceUsd = await askWithDefault(
       rl,
       "PRICE_USD",
@@ -345,6 +416,8 @@ async function runWizard({ writeEnv }) {
       endedWindowSeconds,
       ogTitle,
       ogDescription,
+      accessMode,
+      downloadCodeHash,
     };
 
     const written = writeConfig({ version: 1, defaults });

@@ -4,10 +4,11 @@ set -euo pipefail
 # Buy from a leak promo URL (/) or buy URL (/download) and save the artifact.
 #
 # Usage:
-#   bash skills/leak-buy/scripts/buy.sh <promo_or_download_url> --buyer-private-key-file <path> [--out <path> | --basename <name>]
+#   bash skills/leak-buy/scripts/buy.sh <promo_or_download_url> [--download-code <code>] --buyer-private-key-file <path> [--out <path> | --basename <name>]
 #
 # Examples:
 #   bash skills/leak-buy/scripts/buy.sh "https://xxxx.trycloudflare.com/" --buyer-private-key-file ./buyer.key
+#   bash skills/leak-buy/scripts/buy.sh "https://xxxx.trycloudflare.com/download" --download-code friends-only --buyer-private-key-file ./buyer.key
 #   bash skills/leak-buy/scripts/buy.sh "https://xxxx.trycloudflare.com/download" --buyer-private-key-file ./buyer.key --basename myfile
 #   bash skills/leak-buy/scripts/buy.sh "https://xxxx.trycloudflare.com/" --buyer-private-key-file ./buyer.key --out ./downloads/myfile.bin
 
@@ -56,7 +57,7 @@ run_leak() {
 }
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: bash skills/leak-buy/scripts/buy.sh <promo_or_download_url> --buyer-private-key-file <path> [--out <path> | --basename <name>]"
+  echo "Usage: bash skills/leak-buy/scripts/buy.sh <promo_or_download_url> [--download-code <code>] --buyer-private-key-file <path> [--out <path> | --basename <name>]"
   exit 1
 fi
 

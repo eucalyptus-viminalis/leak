@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  isValidAccessMode,
+  DEFAULT_ACCESS_MODE,
+} from "../src/access_mode.js";
+import { isValidDownloadCodeHash } from "../src/download_code.js";
 
 export const CONFIG_VERSION = 1;
 export const DEFAULT_TESTNET_FACILITATOR_URL = "https://x402.org/facilitator";
@@ -99,8 +104,22 @@ function normalizeDefaults(rawDefaults) {
   const ogDescription = trimString(rawDefaults.ogDescription);
   if (ogDescription) defaults.ogDescription = ogDescription;
 
+  const accessMode = trimString(rawDefaults.accessMode).toLowerCase();
+  if (isValidAccessMode(accessMode)) {
+    defaults.accessMode = accessMode;
+  }
+
+  const downloadCodeHash = trimString(rawDefaults.downloadCodeHash);
+  if (downloadCodeHash && isValidDownloadCodeHash(downloadCodeHash)) {
+    defaults.downloadCodeHash = downloadCodeHash;
+  }
+
   if (defaults.facilitatorMode && !defaults.facilitatorUrl) {
     defaults.facilitatorUrl = defaultFacilitatorUrlForMode(defaults.facilitatorMode);
+  }
+
+  if (!defaults.accessMode) {
+    defaults.accessMode = DEFAULT_ACCESS_MODE;
   }
 
   return defaults;
@@ -192,6 +211,10 @@ export function redactConfig(config) {
 
   if (copy.defaults.cdpApiKeyId) {
     copy.defaults.cdpApiKeyId = redactSecret(copy.defaults.cdpApiKeyId);
+  }
+
+  if (copy.defaults.downloadCodeHash) {
+    copy.defaults.downloadCodeHash = redactSecret(copy.defaults.downloadCodeHash);
   }
 
   return copy;

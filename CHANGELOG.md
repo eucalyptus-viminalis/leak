@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Added new access-mode model with explicit download-code terminology across CLI, config, env, and server runtime:
+  - `no-download-code-no-payment`
+  - `download-code-only-no-payment`
+  - `payment-only-no-download-code` (default)
+  - `download-code-and-payment`
+- Replaced legacy access-secret wording with `download-code` terminology across publish/buy/runtime/docs.
+- Added secure hash-only download-code handling:
+  - launcher hashes raw download-code input before boot (`DOWNLOAD_CODE_HASH`)
+  - server validates download-code using timing-safe `scrypt` hash comparison
+  - no raw download-code persistence in config or env defaults.
+- Added `/download` gate ordering and mode behavior:
+  - download-code check first (`401` on missing/invalid)
+  - x402 payment check second when enabled (`402` flow unchanged)
+  - no-payment modes stream artifact directly without x402 handshake.
+- Added buyer CLI support for `--download-code` and `--download-code-stdin`, with payment flow now conditional on receiving a `402` challenge.
+- Added CI/release terminology audit (`check:download-code-terminology`) to fail builds if banned legacy access-secret wording appears in user-facing surfaces.
+- Improved top-level CLI UX with clearer grouped help output and examples.
+- Added CLI version checks via both `leak version` and `leak --version`.
+- Added interactive publish wizard via `leak publish`:
+  - basic step for core publish inputs
+  - optional advanced step for facilitator/port/OG settings
+  - mandatory final confirmation before launch
+  - optional save-defaults prompt for `~/.leak/config.json`
+- Improved `leak publish` wizard input UX:
+  - `FILE_PATH` prompt now supports Tab autocomplete for local paths
+  - `~` home-directory paths now resolve correctly (for example `~/Downloads/file.txt`)
+  - fixed post-access-mode prompt stability so PRICE/WINDOW/payment prompts do not exit early
+
 ## [2026.2.17-beta.1]
 
 ### Changed

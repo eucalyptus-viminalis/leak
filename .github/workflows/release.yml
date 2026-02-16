@@ -92,6 +92,9 @@ jobs:
           RELEASE_VERSION: ${{ env.PKG_VERSION }}
         run: npm run check:changelog-version
 
+      - name: Download-code terminology check
+        run: npm run check:download-code-terminology
+
       - name: Syntax checks
         run: npm run check:syntax
 

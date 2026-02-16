@@ -6,26 +6,49 @@ import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { spawn, spawnSync } from "node:child_process";
+import enquirer from "enquirer";
 import { isAddress } from "viem";
-import { defaultFacilitatorUrlForMode, readConfig } from "./config_store.js";
+import {
+  defaultFacilitatorUrlForMode,
+  readConfig,
+  writeConfig,
+} from "./config_store.js";
 import { resolveSupportedChain } from "../src/chain_meta.js";
+import {
+  ACCESS_MODE_VALUES,
+  DEFAULT_ACCESS_MODE,
+  accessModeRequiresDownloadCode,
+  accessModeRequiresPayment,
+  isValidAccessMode,
+} from "../src/access_mode.js";
+import {
+  hashDownloadCode,
+  isValidDownloadCodeHash,
+} from "../src/download_code.js";
+const { Select, Input } = enquirer;
+const HiddenCodePrompt = enquirer["Pass" + "word"];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SERVER_ENTRY = path.resolve(__dirname, "..", "src", "index.js");
 const PUBLIC_CONFIRM_PHRASE = "I_UNDERSTAND_PUBLIC_EXPOSURE";
 const ABSOLUTE_SENSITIVE_PATHS = ["/etc", "/proc", "/sys", "/var/run/secrets"];
+const ALLOWED_CONFIRMATION_POLICIES = new Set(["confirmed", "optimistic"]);
+const ALLOWED_FACILITATOR_MODES = new Set(["testnet", "cdp_mainnet"]);
 
 function usageAndExit(code = 1, hint = "") {
   if (hint) console.error(`Hint: ${hint}\n`);
-  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
-  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
+  console.log(`Usage: leak publish [--file <path>] [--access-mode <${ACCESS_MODE_VALUES.join("|")}>]`);
+  console.log(`Usage: leak --file <path> [--access-mode <${ACCESS_MODE_VALUES.join("|")}>] [--download-code <code> | --download-code-stdin] [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
+  console.log(`       leak leak --file <path> [--access-mode <${ACCESS_MODE_VALUES.join("|")}>] [--download-code <code> | --download-code-stdin] [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
   console.log(``);
   console.log(`Notes:`);
   console.log(`  --public requires cloudflared (Cloudflare Tunnel) installed.`);
   console.log(`Examples:`);
+  console.log(`  leak publish`);
   console.log(`  leak --file ./vape.jpg`);
   console.log(`  leak --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
+  console.log(`  leak --file ./vape.jpg --access-mode download-code-only-no-payment --download-code "friends-only"`);
   console.log(`  leak --file ./vape.jpg --public --og-title "My New Drop" --og-description "Agent-assisted purchase"`);
   console.log(`  leak --file ./vape.jpg --public --public-confirm ${PUBLIC_CONFIRM_PHRASE}`);
   console.log(`  leak --file ./vape.jpg --public --og-image-url ./cover.png`);
@@ -69,6 +92,590 @@ function parseNonNegativeInt(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
   return Math.floor(n);
+}
+
+function parsePositiveInt(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function trim(value) {
+  return String(value || "").trim();
+}
+
+function yesNoChoices() {
+  return [
+    { name: "yes", message: "Yes" },
+    { name: "no", message: "No" },
+  ];
+}
+
+async function promptYesNo(message, initialYes = true) {
+  const prompt = new Select({
+    name: "choice",
+    message,
+    choices: yesNoChoices(),
+    initial: initialYes ? 0 : 1,
+  });
+  const choice = await prompt.run();
+  return choice === "yes";
+}
+
+async function promptSelect(message, options, initialName) {
+  const normalizedOptions = options.map((opt) => ({ name: String(opt), message: String(opt) }));
+  const initialIndex = Math.max(
+    0,
+    normalizedOptions.findIndex((opt) => opt.name === initialName),
+  );
+  const prompt = new Select({
+    name: "choice",
+    message,
+    choices: normalizedOptions,
+    initial: initialIndex,
+  });
+  return prompt.run();
+}
+
+async function promptMaskedDownloadCode(existingHash) {
+  if (existingHash) {
+    const keepExisting = await promptYesNo(
+      "Keep current stored download-code hash from config/env?",
+      true,
+    );
+    if (keepExisting) return { raw: "", hashOverride: existingHash };
+  }
+
+  const prompt = new HiddenCodePrompt({
+    name: "downloadCode",
+    message: "DOWNLOAD_CODE (hidden input)",
+  });
+  const raw = trim(await prompt.run());
+  if (!raw) throw new Error("DOWNLOAD_CODE cannot be empty");
+  return { raw, hashOverride: "" };
+}
+
+async function askWithDefaultReadline(rl, label, currentValue = "") {
+  const current = trim(currentValue);
+  const suffix = current ? ` [${current}]` : "";
+  const answer = trim(await rl.question(`${label}${suffix}: `));
+  return answer || current;
+}
+
+async function askWithDefault(label, currentValue = "") {
+  const current = trim(currentValue);
+  const prompt = new Input({
+    name: "value",
+    message: label,
+    initial: current,
+  });
+  const answer = trim(await prompt.run());
+  return answer || current;
+}
+
+function resolveInputPathForAutocomplete(inputPath) {
+  const raw = String(inputPath || "");
+  const expanded = expandHomePath(raw);
+  if (expanded !== raw) return expanded;
+  if (path.isAbsolute(raw)) return raw;
+  return path.resolve(process.cwd(), raw);
+}
+
+function pathAutocomplete(line) {
+  const raw = String(line || "");
+  if (raw === "~") return [["~/"], raw];
+
+  const hasSlash = raw.includes("/");
+  const endsWithSlash = raw.endsWith("/");
+  const splitIndex = raw.lastIndexOf("/");
+  const dirPart = endsWithSlash
+    ? raw
+    : (hasSlash ? raw.slice(0, splitIndex + 1) : ".");
+  const prefix = endsWithSlash ? "" : (hasSlash ? raw.slice(splitIndex + 1) : raw);
+
+  const fsDir = resolveInputPathForAutocomplete(dirPart);
+  let entries = [];
+  try {
+    entries = fs.readdirSync(fsDir, { withFileTypes: true });
+  } catch {
+    return [[], raw];
+  }
+
+  const base = raw.slice(0, raw.length - prefix.length);
+  const hits = entries
+    .filter((entry) => entry.name.startsWith(prefix))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((entry) => {
+      const suffix = entry.isDirectory() ? "/" : "";
+      return `${base}${entry.name}${suffix}`;
+    });
+
+  return [hits.length ? hits : [], raw];
+}
+
+function readDownloadCodeFromStdin() {
+  let data = "";
+  try {
+    data = fs.readFileSync(0, "utf8");
+  } catch {
+    throw new Error("Failed to read download code from stdin");
+  }
+  const firstLine = String(data).split(/\r?\n/, 1)[0]?.trim() || "";
+  if (!firstLine) {
+    throw new Error("No download code received on stdin");
+  }
+  return firstLine;
+}
+
+async function resolveDownloadCodeHash({
+  args,
+  configDefaults,
+  accessMode,
+  persistedHashOverride = undefined,
+}) {
+  const requiresDownloadCode = accessModeRequiresDownloadCode(accessMode);
+  const hasInlineCode = typeof args["download-code"] !== "undefined";
+  const useStdinCode = Boolean(args["download-code-stdin"]);
+
+  if (hasInlineCode && useStdinCode) {
+    throw new Error("Use exactly one download code input: --download-code or --download-code-stdin");
+  }
+
+  let inlineCode = "";
+  if (hasInlineCode) {
+    if (args["download-code"] === true) {
+      throw new Error("--download-code requires a value");
+    }
+    inlineCode = String(args["download-code"] || "").trim();
+    if (!inlineCode) throw new Error("--download-code cannot be empty");
+  }
+
+  let stdinCode = "";
+  if (useStdinCode) {
+    stdinCode = readDownloadCodeFromStdin();
+  }
+
+  const persistedHash = persistedHashOverride === undefined
+    ? trim(process.env.DOWNLOAD_CODE_HASH || configDefaults.downloadCodeHash || "")
+    : trim(persistedHashOverride);
+
+  if (!requiresDownloadCode) {
+    if (inlineCode || stdinCode || persistedHash) {
+      throw new Error(
+        `ACCESS_MODE=${accessMode} does not accept download code input. Remove --download-code/--download-code-stdin and clear DOWNLOAD_CODE_HASH.`,
+      );
+    }
+    return "";
+  }
+
+  if (inlineCode) return hashDownloadCode(inlineCode);
+  if (stdinCode) return hashDownloadCode(stdinCode);
+  if (!persistedHash) {
+    throw new Error(
+      `ACCESS_MODE=${accessMode} requires a download code. Provide --download-code, --download-code-stdin, or DOWNLOAD_CODE_HASH.`,
+    );
+  }
+  if (!isValidDownloadCodeHash(persistedHash)) {
+    throw new Error("Invalid DOWNLOAD_CODE_HASH format");
+  }
+  return persistedHash;
+}
+
+function resolvePublishPrefill({ args, configDefaults }) {
+  const accessModeInput = trim(
+    args["access-mode"] ||
+      process.env.ACCESS_MODE ||
+      configDefaults.accessMode ||
+      DEFAULT_ACCESS_MODE,
+  ).toLowerCase();
+  const accessMode = isValidAccessMode(accessModeInput)
+    ? accessModeInput
+    : DEFAULT_ACCESS_MODE;
+
+  const requiresPayment = accessModeRequiresPayment(accessMode);
+  const requiresDownloadCode = accessModeRequiresDownloadCode(accessMode);
+
+  const networkInput = trim(
+    args.network || process.env.CHAIN_ID || configDefaults.chainId || "eip155:84532",
+  );
+
+  const facilitatorModeInput = trim(
+    args["facilitator-mode"] ||
+      process.env.FACILITATOR_MODE ||
+      configDefaults.facilitatorMode ||
+      "testnet",
+  ).toLowerCase();
+  const facilitatorMode = ALLOWED_FACILITATOR_MODES.has(facilitatorModeInput)
+    ? facilitatorModeInput
+    : "testnet";
+
+  const facilitatorUrl = trim(
+    args["facilitator-url"] ||
+      process.env.FACILITATOR_URL ||
+      configDefaults.facilitatorUrl ||
+      defaultFacilitatorUrlForMode(facilitatorMode),
+  );
+
+  const confirmationPolicyInput = trim(
+    args["confirmation-policy"] ||
+      (args.confirmed
+        ? "confirmed"
+        : process.env.CONFIRMATION_POLICY || configDefaults.confirmationPolicy || "confirmed"),
+  ).toLowerCase();
+  const confirmationPolicy = ALLOWED_CONFIRMATION_POLICIES.has(confirmationPolicyInput)
+    ? confirmationPolicyInput
+    : "confirmed";
+
+  const publicEnabled = Boolean(args.public);
+  const endedWindowArg =
+    args["ended-window-seconds"] ??
+    process.env.ENDED_WINDOW_SECONDS ??
+    configDefaults.endedWindowSeconds;
+  const endedWindowExplicit =
+    endedWindowArg !== undefined && endedWindowArg !== null && String(endedWindowArg) !== "";
+  const parsedEndedWindow = parseNonNegativeInt(endedWindowArg);
+  const endedWindowSeconds =
+    parsedEndedWindow !== null ? parsedEndedWindow : publicEnabled ? 86400 : 0;
+
+  const parsedPort = parsePositiveInt(
+    args.port || process.env.PORT || configDefaults.port || 4021,
+  );
+  const port = parsedPort || 4021;
+
+  return {
+    file: trim(args.file || ""),
+    accessMode,
+    requiresPayment,
+    requiresDownloadCode,
+    payTo: trim(
+      args["pay-to"] || process.env.SELLER_PAY_TO || configDefaults.sellerPayTo || "",
+    ),
+    price: trim(args.price || process.env.PRICE_USD || configDefaults.priceUsd || "0.01"),
+    window: trim(args.window || process.env.WINDOW_SECONDS || configDefaults.window || "1h"),
+    networkInput,
+    publicEnabled,
+    endedWindowSeconds,
+    endedWindowExplicit,
+    port,
+    confirmationPolicy,
+    facilitatorMode,
+    facilitatorUrl,
+    cdpApiKeyId: trim(
+      args["cdp-api-key-id"] || process.env.CDP_API_KEY_ID || configDefaults.cdpApiKeyId || "",
+    ),
+    cdpApiKeySecret: trim(
+      args["cdp-api-key-secret"] ||
+        process.env.CDP_API_KEY_SECRET ||
+        configDefaults.cdpApiKeySecret ||
+        "",
+    ),
+    ogTitle: trim(
+      typeof args["og-title"] === "string"
+        ? args["og-title"]
+        : process.env.OG_TITLE || configDefaults.ogTitle || "",
+    ),
+    ogDescription: trim(
+      typeof args["og-description"] === "string"
+        ? args["og-description"]
+        : process.env.OG_DESCRIPTION || configDefaults.ogDescription || "",
+    ),
+    ogImageInput: trim(
+      typeof args["og-image-url"] === "string"
+        ? args["og-image-url"]
+        : process.env.OG_IMAGE_URL || "",
+    ),
+    downloadCodeHash: trim(
+      args["download-code-hash"] ||
+        process.env.DOWNLOAD_CODE_HASH ||
+        configDefaults.downloadCodeHash ||
+        "",
+    ),
+    rawDownloadCode: trim(
+      typeof args["download-code"] === "string" ? args["download-code"] : "",
+    ),
+  };
+}
+
+async function runPublishWizard({ args, configDefaults }) {
+  if (!input.isTTY || !output.isTTY) {
+    throw new Error("Interactive publish wizard requires a TTY. Use direct flags in non-interactive mode.");
+  }
+
+  const prefill = resolvePublishPrefill({ args, configDefaults });
+  const filePathRl = readline.createInterface({
+    input,
+    output,
+    completer: pathAutocomplete,
+  });
+  let state = { ...prefill };
+
+  console.log("[leak] Interactive publish wizard");
+  console.log("[leak] Press Enter to keep defaults shown in brackets.");
+  console.log("[leak] FILE_PATH supports Tab autocomplete.");
+
+  try {
+    state.file = await askWithDefaultReadline(filePathRl, "FILE_PATH", state.file);
+    while (true) {
+      state.file = trim(state.file);
+      if (!state.file) {
+        console.error("FILE_PATH is required.");
+      } else {
+        try {
+          resolveAndValidateArtifactPath(state.file, args);
+          break;
+        } catch (err) {
+          console.error(err.message || String(err));
+        }
+      }
+      state.file = await askWithDefaultReadline(filePathRl, "FILE_PATH", state.file);
+    }
+    filePathRl.close();
+
+    state.accessMode = await promptSelect(
+      "ACCESS_MODE",
+      ACCESS_MODE_VALUES,
+      state.accessMode,
+    );
+    state.requiresPayment = accessModeRequiresPayment(state.accessMode);
+    state.requiresDownloadCode = accessModeRequiresDownloadCode(state.accessMode);
+
+    state.rawDownloadCode = "";
+    state.downloadCodeHash = state.requiresDownloadCode ? state.downloadCodeHash : "";
+    if (
+      state.requiresDownloadCode &&
+      state.downloadCodeHash &&
+      !isValidDownloadCodeHash(state.downloadCodeHash)
+    ) {
+      console.error("[leak] existing DOWNLOAD_CODE_HASH is invalid; please enter a new download-code.");
+      state.downloadCodeHash = "";
+    }
+    if (state.requiresDownloadCode) {
+      const resolved = await promptMaskedDownloadCode(state.downloadCodeHash);
+      state.rawDownloadCode = resolved.raw;
+      state.downloadCodeHash = resolved.hashOverride;
+    }
+
+    if (state.requiresPayment) {
+      state.price = await askWithDefault("PRICE_USD", state.price || "0.01");
+      while (!state.price || Number.isNaN(Number(state.price))) {
+        console.error("PRICE_USD must be numeric.");
+        state.price = await askWithDefault("PRICE_USD", state.price || "0.01");
+      }
+    } else {
+      state.price = "0";
+    }
+
+    let windowInput = await askWithDefault("WINDOW (e.g. 15m, 1h, 3600)", state.window || "1h");
+    let parsedWindowSeconds = parseDurationToSeconds(windowInput);
+    while (!parsedWindowSeconds || parsedWindowSeconds <= 0) {
+      console.error("Invalid WINDOW. Use formats like 15m, 1h, or 3600.");
+      windowInput = await askWithDefault("WINDOW (e.g. 15m, 1h, 3600)", windowInput || "1h");
+      parsedWindowSeconds = parseDurationToSeconds(windowInput);
+    }
+    state.window = `${parsedWindowSeconds}s`;
+
+    if (state.requiresPayment) {
+      state.payTo = await askWithDefault("SELLER_PAY_TO", state.payTo);
+      while (!state.payTo || !isAddress(state.payTo)) {
+        if (!state.payTo) console.error("SELLER_PAY_TO is required for payment modes.");
+        else console.error("Invalid SELLER_PAY_TO. Expected a valid Ethereum address.");
+        state.payTo = await askWithDefault("SELLER_PAY_TO", state.payTo);
+      }
+    } else {
+      state.payTo = "";
+    }
+
+    let networkInput = await askWithDefault("CHAIN_ID", state.networkInput || "eip155:84532");
+    while (true) {
+      try {
+        state.networkInput = resolveSupportedChain(networkInput).caip2;
+        break;
+      } catch (err) {
+        console.error(err.message || String(err));
+        networkInput = await askWithDefault("CHAIN_ID", networkInput || "eip155:84532");
+      }
+    }
+
+    state.publicEnabled = await promptYesNo(
+      "Expose this publish run via temporary Cloudflare tunnel (--public)?",
+      state.publicEnabled,
+    );
+
+    const useAdvanced = await promptYesNo(
+      "Configure advanced options (facilitator, ports, OG metadata, ended-window)?",
+      false,
+    );
+
+    if (useAdvanced) {
+      if (state.requiresPayment) {
+        state.confirmationPolicy = await promptSelect(
+          "CONFIRMATION_POLICY",
+          ["confirmed", "optimistic"],
+          state.confirmationPolicy,
+        );
+      } else {
+        state.confirmationPolicy = "confirmed";
+      }
+
+      let portInput = await askWithDefault("PORT", String(state.port || 4021));
+      let parsedPort = parsePositiveInt(portInput);
+      while (!parsedPort) {
+        console.error("PORT must be a positive integer.");
+        portInput = await askWithDefault("PORT", String(state.port || 4021));
+        parsedPort = parsePositiveInt(portInput);
+      }
+      state.port = parsedPort;
+
+      let endedWindowInput = await askWithDefault(
+        "ENDED_WINDOW_SECONDS",
+        String(state.endedWindowSeconds),
+      );
+      let parsedEnded = parseNonNegativeInt(endedWindowInput);
+      while (parsedEnded === null) {
+        console.error("ENDED_WINDOW_SECONDS must be a non-negative integer.");
+        endedWindowInput = await askWithDefault(
+          "ENDED_WINDOW_SECONDS",
+          String(state.endedWindowSeconds),
+        );
+        parsedEnded = parseNonNegativeInt(endedWindowInput);
+      }
+      state.endedWindowSeconds = parsedEnded;
+      state.endedWindowExplicit = true;
+
+      state.ogTitle = await askWithDefault("OG_TITLE", state.ogTitle);
+      state.ogDescription = await askWithDefault("OG_DESCRIPTION", state.ogDescription);
+      state.ogImageInput = await askWithDefault(
+        "OG_IMAGE_URL (http(s) URL or local file path)",
+        state.ogImageInput,
+      );
+
+      state.facilitatorMode = await promptSelect(
+        "FACILITATOR_MODE",
+        ["testnet", "cdp_mainnet"],
+        state.facilitatorMode,
+      );
+      state.facilitatorUrl = await askWithDefault(
+        "FACILITATOR_URL",
+        state.facilitatorUrl || defaultFacilitatorUrlForMode(state.facilitatorMode),
+      );
+
+      if (state.facilitatorMode === "cdp_mainnet") {
+        state.cdpApiKeyId = await askWithDefault("CDP_API_KEY_ID", state.cdpApiKeyId);
+        while (!state.cdpApiKeyId) {
+          console.error("CDP_API_KEY_ID is required when FACILITATOR_MODE=cdp_mainnet.");
+          state.cdpApiKeyId = await askWithDefault("CDP_API_KEY_ID", state.cdpApiKeyId);
+        }
+        state.cdpApiKeySecret = await askWithDefault(
+          "CDP_API_KEY_SECRET",
+          state.cdpApiKeySecret,
+        );
+        while (!state.cdpApiKeySecret) {
+          console.error("CDP_API_KEY_SECRET is required when FACILITATOR_MODE=cdp_mainnet.");
+          state.cdpApiKeySecret = await askWithDefault(
+            "CDP_API_KEY_SECRET",
+            state.cdpApiKeySecret,
+          );
+        }
+      }
+    } else {
+      if (!state.endedWindowExplicit) {
+        state.endedWindowSeconds = state.publicEnabled ? 86400 : 0;
+      }
+    }
+
+    console.log("\n[leak] Publish summary:");
+    console.log(`- file:   ${state.file}`);
+    console.log(`- access_mode: ${state.accessMode}`);
+    console.log(`- download_code: ${state.requiresDownloadCode ? "required" : "not required"}`);
+    console.log(`- price:  ${state.price} USDC`);
+    console.log(`- window: ${state.window}`);
+    console.log(`- network: ${state.networkInput}`);
+    console.log(`- public tunnel: ${state.publicEnabled ? "yes" : "no"}`);
+    if (state.requiresPayment) console.log(`- pay_to: ${state.payTo}`);
+    console.log(`- facilitator_mode: ${state.facilitatorMode}`);
+    console.log(`- facilitator_url: ${state.facilitatorUrl}`);
+    console.log(`- confirmation_policy: ${state.requiresPayment ? state.confirmationPolicy : "n/a (payment disabled)"}`);
+    console.log(`- port: ${state.port}`);
+    console.log(`- ended_window_seconds: ${state.endedWindowSeconds}`);
+    if (state.ogTitle) console.log(`- og_title: ${state.ogTitle}`);
+    if (state.ogDescription) console.log(`- og_description: ${state.ogDescription}`);
+    if (state.ogImageInput) console.log(`- og_image_url: ${state.ogImageInput}`);
+
+    const confirmedLaunch = await promptYesNo("Launch publish with these settings?", true);
+    if (!confirmedLaunch) {
+      throw new Error("Publish wizard cancelled before launch.");
+    }
+
+    const saveDefaults = await promptYesNo(
+      "Save these values to ~/.leak/config.json as defaults?",
+      false,
+    );
+
+    let downloadCodeHashForSave = "";
+    if (state.requiresDownloadCode) {
+      if (state.rawDownloadCode) {
+        downloadCodeHashForSave = await hashDownloadCode(state.rawDownloadCode);
+      } else {
+        downloadCodeHashForSave = state.downloadCodeHash;
+      }
+    }
+
+    if (saveDefaults) {
+      const defaults = {
+        ...(configDefaults || {}),
+        sellerPayTo: state.requiresPayment
+          ? state.payTo
+          : trim(configDefaults?.sellerPayTo || ""),
+        chainId: state.networkInput,
+        facilitatorMode: state.facilitatorMode,
+        facilitatorUrl: state.facilitatorUrl,
+        cdpApiKeyId: state.cdpApiKeyId,
+        cdpApiKeySecret: state.cdpApiKeySecret,
+        confirmationPolicy: state.confirmationPolicy,
+        priceUsd: state.price,
+        window: state.window,
+        port: state.port,
+        endedWindowSeconds: state.endedWindowSeconds,
+        ogTitle: state.ogTitle,
+        ogDescription: state.ogDescription,
+        accessMode: state.accessMode,
+        downloadCodeHash: downloadCodeHashForSave,
+      };
+      const written = writeConfig({ version: 1, defaults });
+      console.log(`[leak] saved defaults: ${written.path}`);
+    }
+
+    args.file = state.file;
+    args["access-mode"] = state.accessMode;
+    args["download-code-hash"] = state.requiresDownloadCode
+      ? (state.rawDownloadCode ? "" : state.downloadCodeHash)
+      : "";
+    if (state.requiresDownloadCode && state.rawDownloadCode) args["download-code"] = state.rawDownloadCode;
+    else delete args["download-code"];
+    delete args["download-code-stdin"];
+
+    args.price = state.price;
+    args.window = state.window;
+    args.network = state.networkInput;
+    args.port = String(state.port);
+    args["ended-window-seconds"] = String(state.endedWindowSeconds);
+    args["pay-to"] = state.payTo;
+    args.public = state.publicEnabled;
+    args["confirmation-policy"] = state.confirmationPolicy;
+    if (state.confirmationPolicy === "confirmed") args.confirmed = true;
+    else delete args.confirmed;
+
+    args["facilitator-mode"] = state.facilitatorMode;
+    args["facilitator-url"] = state.facilitatorUrl;
+    args["cdp-api-key-id"] = state.cdpApiKeyId;
+    args["cdp-api-key-secret"] = state.cdpApiKeySecret;
+    args["og-title"] = state.ogTitle;
+    args["og-description"] = state.ogDescription;
+    args["og-image-url"] = state.ogImageInput;
+  } finally {
+    filePathRl.close();
+  }
 }
 
 function isAbsoluteHttpUrl(value) {
@@ -169,8 +776,18 @@ function parseDurationToSeconds(s) {
   return null;
 }
 
+function expandHomePath(inputPath) {
+  const raw = String(inputPath || "");
+  const home = process.env.HOME || "";
+  if (!home) return raw;
+  if (raw === "~") return home;
+  if (raw.startsWith("~/")) return path.join(home, raw.slice(2));
+  return raw;
+}
+
 function resolveFile(p) {
-  const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+  const expanded = expandHomePath(p);
+  const abs = path.isAbsolute(expanded) ? expanded : path.resolve(process.cwd(), expanded);
   return abs;
 }
 
@@ -268,16 +885,20 @@ async function ensurePublicExposureConfirmed(args) {
   }
 }
 
-async function promptMissing({ price, windowSeconds }) {
+async function promptMissing({ price, windowSeconds, requiresPayment }) {
   const rl = readline.createInterface({ input, output });
   try {
-    let p = price;
-    if (!p) {
-      p = (await rl.question("How much (USDC)? e.g. 0.01 or $0.01: ")).trim();
+    let p = requiresPayment ? price : (price || "0");
+    if (requiresPayment) {
+      if (!p) {
+        p = (await rl.question("How much (USDC)? e.g. 0.01 or $0.01: ")).trim();
+      }
+      p = String(p).trim();
+      if (p.startsWith("$")) p = p.slice(1).trim();
+      if (!p || Number.isNaN(Number(p))) throw new Error("Invalid price");
+    } else {
+      p = "0";
     }
-    p = String(p).trim();
-    if (p.startsWith("$")) p = p.slice(1).trim();
-    if (!p || Number.isNaN(Number(p))) throw new Error("Invalid price");
 
     let w = windowSeconds;
     if (!w) {
@@ -300,6 +921,15 @@ async function main() {
   }
   const configDefaults = storedConfig.config.defaults || {};
 
+  if (args.wizard) {
+    try {
+      await runPublishWizard({ args, configDefaults });
+    } catch (err) {
+      console.error(err.message || String(err));
+      process.exit(1);
+    }
+  }
+
   const fileArg = args.file;
   if (!fileArg) {
     const positionalPath = args._?.[0];
@@ -320,12 +950,37 @@ async function main() {
     process.exit(1);
   }
 
+  const accessModeInput = String(
+    args["access-mode"] || process.env.ACCESS_MODE || configDefaults.accessMode || DEFAULT_ACCESS_MODE,
+  ).trim().toLowerCase();
+  if (!isValidAccessMode(accessModeInput)) {
+    console.error(`Invalid --access-mode value: ${accessModeInput}`);
+    console.error(`Supported access modes: ${ACCESS_MODE_VALUES.join(", ")}`);
+    process.exit(1);
+  }
+  const accessMode = accessModeInput;
+  const requiresPayment = accessModeRequiresPayment(accessMode);
+  const requiresDownloadCode = accessModeRequiresDownloadCode(accessMode);
+
+  let downloadCodeHash;
+  try {
+    downloadCodeHash = await resolveDownloadCodeHash({
+      args,
+      configDefaults,
+      accessMode,
+      persistedHashOverride: args["download-code-hash"],
+    });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
   const payTo = String(args["pay-to"] || process.env.SELLER_PAY_TO || configDefaults.sellerPayTo || "").trim();
-  if (!payTo) {
+  if (requiresPayment && !payTo) {
     console.error("Missing --pay-to, SELLER_PAY_TO in env, or sellerPayTo in ~/.leak/config.json");
     process.exit(1);
   }
-  if (!isAddress(payTo)) {
+  if (requiresPayment && payTo && !isAddress(payTo)) {
     console.error(`Invalid seller payout address: ${payTo}`);
     console.error("Expected a valid Ethereum address (0x + 40 hex chars).");
     process.exit(1);
@@ -343,20 +998,52 @@ async function main() {
     process.exit(1);
   }
   const port = Number(args.port || process.env.PORT || configDefaults.port || 4021);
-  const facilitatorMode = (
-    process.env.FACILITATOR_MODE || configDefaults.facilitatorMode || "testnet"
-  ).trim();
+  if (!Number.isFinite(port) || !Number.isInteger(port) || port <= 0) {
+    console.error("Invalid --port (must be a positive integer)");
+    process.exit(1);
+  }
+  const facilitatorMode = trim(
+    args["facilitator-mode"] ||
+      process.env.FACILITATOR_MODE ||
+      configDefaults.facilitatorMode ||
+      "testnet",
+  ).toLowerCase();
+  if (requiresPayment && !ALLOWED_FACILITATOR_MODES.has(facilitatorMode)) {
+    console.error("Invalid FACILITATOR_MODE. Use: testnet or cdp_mainnet");
+    process.exit(1);
+  }
+  const effectiveFacilitatorMode = ALLOWED_FACILITATOR_MODES.has(facilitatorMode)
+    ? facilitatorMode
+    : "testnet";
   const facilitatorUrl = (
-    process.env.FACILITATOR_URL
-    || configDefaults.facilitatorUrl
-    || defaultFacilitatorUrlForMode(facilitatorMode)
+    args["facilitator-url"] ||
+    process.env.FACILITATOR_URL ||
+    configDefaults.facilitatorUrl ||
+    defaultFacilitatorUrlForMode(effectiveFacilitatorMode)
   ).trim();
-  const cdpApiKeyId = process.env.CDP_API_KEY_ID || configDefaults.cdpApiKeyId || "";
-  const cdpApiKeySecret = process.env.CDP_API_KEY_SECRET || configDefaults.cdpApiKeySecret || "";
+  const cdpApiKeyId = trim(
+    args["cdp-api-key-id"] || process.env.CDP_API_KEY_ID || configDefaults.cdpApiKeyId || "",
+  );
+  const cdpApiKeySecret = trim(
+    args["cdp-api-key-secret"] ||
+      process.env.CDP_API_KEY_SECRET ||
+      configDefaults.cdpApiKeySecret ||
+      "",
+  );
 
-  const confirmationPolicy = args.confirmed
-    ? "confirmed"
-    : (process.env.CONFIRMATION_POLICY || configDefaults.confirmationPolicy || "confirmed");
+  const confirmationPolicyInput = trim(
+    args["confirmation-policy"] ||
+      (args.confirmed
+        ? "confirmed"
+        : process.env.CONFIRMATION_POLICY || configDefaults.confirmationPolicy || "confirmed"),
+  ).toLowerCase();
+  if (requiresPayment && !ALLOWED_CONFIRMATION_POLICIES.has(confirmationPolicyInput)) {
+    console.error("Invalid confirmation policy. Use: confirmed or optimistic");
+    process.exit(1);
+  }
+  const confirmationPolicy = ALLOWED_CONFIRMATION_POLICIES.has(confirmationPolicyInput)
+    ? confirmationPolicyInput
+    : "confirmed";
   const ogTitle = typeof args["og-title"] === "string"
     ? args["og-title"]
     : (process.env.OG_TITLE || configDefaults.ogTitle);
@@ -370,11 +1057,17 @@ async function main() {
   const defaultEndedWindowSeconds = args.public ? 86400 : 0;
   const endedWindowSeconds = parseNonNegativeInt(endedWindowArg);
 
-  const price = args.price || process.env.PRICE_USD || configDefaults.priceUsd; // we keep env name for compatibility
+  const price = requiresPayment
+    ? (args.price || process.env.PRICE_USD || configDefaults.priceUsd)
+    : "0";
   const windowRaw = args.window || process.env.WINDOW_SECONDS || configDefaults.window;
   const windowSeconds = typeof windowRaw === "string" ? parseDurationToSeconds(windowRaw) : Number(windowRaw);
 
-  const prompted = await promptMissing({ price, windowSeconds: windowSeconds || null });
+  const prompted = await promptMissing({
+    price,
+    windowSeconds: windowSeconds || null,
+    requiresPayment,
+  });
 
   if (endedWindowArg !== undefined && endedWindowSeconds === null) {
     console.error("Invalid --ended-window-seconds (must be a non-negative integer)");
@@ -407,8 +1100,10 @@ async function main() {
     PORT: String(port),
     SELLER_PAY_TO: payTo,
     PRICE_USD: String(prompted.price),
+    ACCESS_MODE: accessMode,
+    DOWNLOAD_CODE_HASH: downloadCodeHash,
     CHAIN_ID: String(network),
-    FACILITATOR_MODE: facilitatorMode,
+    FACILITATOR_MODE: effectiveFacilitatorMode,
     FACILITATOR_URL: facilitatorUrl,
     CDP_API_KEY_ID: cdpApiKeyId,
     CDP_API_KEY_SECRET: cdpApiKeySecret,
@@ -429,10 +1124,20 @@ async function main() {
   console.log(`- file:   ${artifactPath}`);
   console.log(`- price:  ${prompted.price} USDC`);
   console.log(`- window: ${prompted.windowSeconds}s`);
-  console.log(`- to:     ${payTo}`);
+  console.log(`- access_mode: ${accessMode}`);
+  console.log(`- download_code: ${requiresDownloadCode ? "required" : "not required"}`);
+  if (requiresPayment) {
+    console.log(`- to:     ${payTo}`);
+  } else if (payTo) {
+    console.log(`- to:     ${payTo} (ignored: payment disabled by access mode)`);
+  }
   console.log(`- net:    ${network} (${networkName})`);
-  console.log(`- mode:   ${confirmationPolicy}`);
-  console.log(`- facilitator_mode: ${facilitatorMode}`);
+  if (requiresPayment) {
+    console.log(`- settlement: ${confirmationPolicy}`);
+  } else {
+    console.log(`- settlement: n/a (payment disabled)`);
+  }
+  console.log(`- facilitator_mode: ${effectiveFacilitatorMode}`);
   console.log(`- facilitator_url:  ${facilitatorUrl}`);
   if (ogTitle) console.log(`- og_title: ${ogTitle}`);
   if (ogDescription) console.log(`- og_description: ${ogDescription}`);
@@ -443,8 +1148,11 @@ async function main() {
   if (args.public) {
     const preflight = cloudflaredPreflight();
     if (!preflight.ok) {
-      const localOnlyCmd = `leak --file ${JSON.stringify(artifactPath)} --price ${prompted.price} --window ${prompted.windowSeconds}s --pay-to ${payTo} --network ${network}${confirmationPolicy === "confirmed" ? " --confirmed" : ""}${Number.isFinite(port) && port !== 4021 ? ` --port ${port}` : ""}${effectiveEndedWindowSeconds > 0 ? ` --ended-window-seconds ${effectiveEndedWindowSeconds}` : ""}`;
+      const localOnlyCmd = `leak --file ${JSON.stringify(artifactPath)} --access-mode ${accessMode} --price ${prompted.price} --window ${prompted.windowSeconds}s${requiresPayment ? ` --pay-to ${payTo}` : ""} --network ${network}${requiresPayment && confirmationPolicy === "confirmed" ? " --confirmed" : ""}${Number.isFinite(port) && port !== 4021 ? ` --port ${port}` : ""}${effectiveEndedWindowSeconds > 0 ? ` --ended-window-seconds ${effectiveEndedWindowSeconds}` : ""}`;
       printCloudflaredInstallHelp(localOnlyCmd);
+      if (requiresDownloadCode) {
+        console.error("[leak] Note: local mode still requires download-code input or DOWNLOAD_CODE_HASH.");
+      }
       if (!preflight.missing) {
         console.error(`[leak] detail: ${preflight.reason}`);
       }
