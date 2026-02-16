@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import "dotenv/config";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import enquirer from "enquirer";
 import { isAddress } from "viem";
 import {
@@ -36,6 +38,7 @@ const PUBLIC_CONFIRM_PHRASE = "I_UNDERSTAND_PUBLIC_EXPOSURE";
 const ABSOLUTE_SENSITIVE_PATHS = ["/etc", "/proc", "/sys", "/var/run/secrets"];
 const ALLOWED_CONFIRMATION_POLICIES = new Set(["confirmed", "optimistic"]);
 const ALLOWED_FACILITATOR_MODES = new Set(["testnet", "cdp_mainnet"]);
+const RUNS_DIR = ".leak/runs";
 const outUi = createUi(output);
 const errUi = createUi(process.stderr);
 
@@ -946,6 +949,377 @@ async function promptMissing({ price, windowSeconds, requiresPayment }) {
   }
 }
 
+function nowSeconds() {
+  return Math.floor(Date.now() / 1000);
+}
+
+function toIsoSeconds(ts) {
+  return new Date(Number(ts) * 1000).toISOString();
+}
+
+function bestEffortChmod(targetPath, mode) {
+  try {
+    fs.chmodSync(targetPath, mode);
+  } catch {
+    // best effort only
+  }
+}
+
+function getRunsDirPath() {
+  const home = process.env.HOME || os.homedir();
+  return path.join(home, RUNS_DIR);
+}
+
+function ensureRunsDir() {
+  const runsDir = getRunsDirPath();
+  fs.mkdirSync(runsDir, { recursive: true });
+  bestEffortChmod(runsDir, 0o700);
+  return runsDir;
+}
+
+function createRunStatePaths(runId) {
+  const runsDir = ensureRunsDir();
+  return {
+    runsDir,
+    statePath: path.join(runsDir, `${runId}.json`),
+    latestPath: path.join(runsDir, "latest.json"),
+  };
+}
+
+function persistRunState(paths, runState) {
+  const nextState = {
+    ...runState,
+    updatedAtTs: nowSeconds(),
+  };
+  const serialized = `${JSON.stringify(nextState, null, 2)}\n`;
+  fs.writeFileSync(paths.statePath, serialized, { mode: 0o600 });
+  bestEffortChmod(paths.statePath, 0o600);
+
+  const latest = {
+    runId: nextState.runId,
+    statePath: paths.statePath,
+    status: nextState.status,
+    updatedAtTs: nextState.updatedAtTs,
+  };
+  fs.writeFileSync(paths.latestPath, `${JSON.stringify(latest, null, 2)}\n`, { mode: 0o600 });
+  bestEffortChmod(paths.latestPath, 0o600);
+  return nextState;
+}
+
+function computeRestartDelayMs(restartCount) {
+  const baseMs = 1000;
+  const capped = Math.min(30000, baseMs * 2 ** Math.max(0, restartCount - 1));
+  const jitter = 0.8 + Math.random() * 0.4;
+  return Math.max(250, Math.floor(capped * jitter));
+}
+
+function sleepWithCancel(ms, registerCancel) {
+  const durationMs = Math.max(0, Number(ms) || 0);
+  return new Promise((resolve) => {
+    if (!durationMs) {
+      registerCancel?.(null);
+      resolve();
+      return;
+    }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      registerCancel?.(null);
+      resolve();
+    };
+    const timer = setTimeout(finish, durationMs);
+    registerCancel?.(() => {
+      clearTimeout(timer);
+      finish();
+    });
+  });
+}
+
+function runWorkerOnce({
+  args,
+  port,
+  env,
+  remainingUntilHardStopSeconds,
+  registerManualStop,
+  onTunnelUrls,
+}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let stopReason = "";
+    let tunnelFatalDetail = "";
+    let tunnelProc = null;
+    let stopTimer = null;
+
+    const child = spawn(process.execPath, [SERVER_ENTRY], {
+      env,
+      stdio: "inherit",
+    });
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (stopTimer) clearTimeout(stopTimer);
+      registerManualStop(null);
+      try {
+        tunnelProc?.kill("SIGTERM");
+      } catch {}
+      resolve(result);
+    };
+
+    const stopAll = (reason) => {
+      if (stopReason) return;
+      stopReason = reason;
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+      try {
+        tunnelProc?.kill("SIGTERM");
+      } catch {}
+    };
+
+    registerManualStop(() => stopAll("manual_stop"));
+
+    child.on("error", (err) => {
+      finish({ reason: "child_crash", detail: `failed to start server process: ${err.message}` });
+    });
+
+    if (args.public) {
+      logInfo("Starting Cloudflare quick tunnel...");
+      tunnelProc = spawn(
+        "cloudflared",
+        ["tunnel", "--url", `http://localhost:${port}`, "--no-autoupdate"],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+
+      tunnelProc.on("error", (err) => {
+        if (err.code === "ENOENT") {
+          tunnelFatalDetail = "cloudflared not found. Install it or re-run without --public.";
+        } else {
+          tunnelFatalDetail = `failed to start tunnel: ${err.message}`;
+        }
+        stopAll("tunnel_fatal");
+      });
+
+      const urlRegex = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi;
+      const onData = (chunk) => {
+        const s = chunk.toString("utf8");
+        const m = s.match(urlRegex);
+        if (m && m[0]) {
+          const publicUrl = m[0];
+          const promoUrl = `${publicUrl}/`;
+          const buyUrl = `${publicUrl}/download`;
+          console.log("");
+          console.log(outUi.section("Public Tunnel"));
+          for (const line of outUi.formatRows([
+            { key: "public_url", value: outUi.link(publicUrl) },
+            { key: "promo_link", value: outUi.link(promoUrl) },
+            { key: "buy_link", value: outUi.link(buyUrl) },
+          ])) {
+            console.log(line);
+          }
+          onTunnelUrls?.({ publicUrl, promoUrl, buyUrl });
+          tunnelProc?.stdout?.off("data", onData);
+          tunnelProc?.stderr?.off("data", onData);
+        }
+      };
+
+      tunnelProc.stdout.on("data", onData);
+      tunnelProc.stderr.on("data", onData);
+
+      tunnelProc.on("exit", (code, signal) => {
+        if (stopReason) {
+          if (signal) logWarn(`Tunnel exited (signal ${signal})`);
+          else logInfo(`Tunnel exited (code ${code})`);
+          return;
+        }
+        tunnelFatalDetail = signal
+          ? `tunnel exited unexpectedly (signal ${signal})`
+          : `tunnel exited unexpectedly (code ${code})`;
+        stopAll("tunnel_fatal");
+      });
+    }
+
+    stopTimer = setTimeout(
+      () => stopAll("deadline_stop"),
+      Math.max(0, remainingUntilHardStopSeconds) * 1000,
+    );
+
+    child.on("exit", (code, signal) => {
+      if (stopReason === "manual_stop") {
+        finish({ reason: "manual_stop" });
+        return;
+      }
+      if (stopReason === "deadline_stop") {
+        finish({ reason: "normal_window_stop" });
+        return;
+      }
+      if (stopReason === "tunnel_fatal") {
+        finish({
+          reason: "tunnel_fatal",
+          detail: tunnelFatalDetail || "public tunnel failed unexpectedly",
+        });
+        return;
+      }
+      if (signal) {
+        finish({ reason: "child_crash", detail: `server exited unexpectedly (signal ${signal})` });
+        return;
+      }
+      finish({ reason: "child_crash", detail: `server exited unexpectedly (code ${code ?? "n/a"})` });
+    });
+  });
+}
+
+async function supervisorMain({
+  args,
+  port,
+  envBase,
+  saleStartTsFixed,
+  saleEndTsFixed,
+  hardStopTsFixed,
+  effectiveEndedWindowSeconds,
+  runStatePaths,
+  runState,
+}) {
+  console.log("");
+  console.log(outUi.section("Supervisor"));
+  for (const line of outUi.formatRows([
+    { key: "run_id", value: runState.runId },
+    { key: "state_file", value: runStatePaths.statePath },
+    { key: "sale_end", value: toIsoSeconds(saleEndTsFixed) },
+    { key: "hard_stop", value: toIsoSeconds(hardStopTsFixed) },
+  ])) {
+    console.log(line);
+  }
+
+  let manualStopRequested = false;
+  let activeManualStop = null;
+  let pendingDelayCancel = null;
+
+  const handleSignal = (signalName) => {
+    if (manualStopRequested) return;
+    manualStopRequested = true;
+    logWarn(`Received ${signalName}; stopping supervisor...`);
+    if (typeof activeManualStop === "function") activeManualStop();
+    if (typeof pendingDelayCancel === "function") pendingDelayCancel();
+  };
+  const onSigInt = () => handleSignal("SIGINT");
+  const onSigTerm = () => handleSignal("SIGTERM");
+  process.on("SIGINT", onSigInt);
+  process.on("SIGTERM", onSigTerm);
+
+  try {
+    while (true) {
+      const nowTs = nowSeconds();
+      const remainingSaleSeconds = Math.max(0, saleEndTsFixed - nowTs);
+      const remainingUntilHardStopSeconds = Math.max(0, hardStopTsFixed - nowTs);
+
+      if (remainingUntilHardStopSeconds <= 0) {
+        runState.status = "stopped";
+        runState.lastExitReason = "normal_window_stop";
+        runState = persistRunState(runStatePaths, runState);
+        if (effectiveEndedWindowSeconds > 0) {
+          logInfo(`Ended-window elapsed (${effectiveEndedWindowSeconds}s after sale end). stopping...`);
+        } else {
+          logInfo(`Window expired. stopping...`);
+        }
+        return 0;
+      }
+
+      const env = {
+        ...envBase,
+        WINDOW_SECONDS: String(remainingSaleSeconds),
+        SALE_START_TS: String(saleStartTsFixed),
+        SALE_END_TS: String(saleEndTsFixed),
+        ENDED_WINDOW_SECONDS: String(effectiveEndedWindowSeconds),
+      };
+
+      const result = await runWorkerOnce({
+        args,
+        port,
+        env,
+        remainingUntilHardStopSeconds,
+        registerManualStop: (nextStop) => {
+          activeManualStop = typeof nextStop === "function" ? nextStop : null;
+        },
+        onTunnelUrls: (urls) => {
+          runState.latestPublicUrl = urls.publicUrl;
+          runState.latestPromoUrl = urls.promoUrl;
+          runState.latestBuyUrl = urls.buyUrl;
+          runState = persistRunState(runStatePaths, runState);
+        },
+      });
+      activeManualStop = null;
+      runState.lastExitReason = result.reason;
+      runState = persistRunState(runStatePaths, runState);
+
+      if (manualStopRequested || result.reason === "manual_stop") {
+        runState.status = "stopped";
+        runState.lastExitReason = "manual_stop";
+        runState = persistRunState(runStatePaths, runState);
+        logInfo("Stopped by user request.");
+        return 0;
+      }
+
+      if (result.reason === "normal_window_stop") {
+        runState.status = "stopped";
+        runState = persistRunState(runStatePaths, runState);
+        if (effectiveEndedWindowSeconds > 0) {
+          logInfo(`Ended-window elapsed (${effectiveEndedWindowSeconds}s after sale end). stopping...`);
+        } else {
+          logInfo("Window expired. stopping...");
+        }
+        return 0;
+      }
+
+      if (result.reason === "child_crash" || result.reason === "tunnel_fatal") {
+        runState.restartCount += 1;
+        runState.status = "running";
+        runState = persistRunState(runStatePaths, runState);
+
+        const remainingSeconds = Math.max(0, hardStopTsFixed - nowSeconds());
+        if (remainingSeconds <= 0) {
+          runState.status = "stopped";
+          runState.lastExitReason = "normal_window_stop";
+          runState = persistRunState(runStatePaths, runState);
+          logInfo("Hard-stop deadline reached. stopping...");
+          return 0;
+        }
+
+        const requestedDelayMs = computeRestartDelayMs(runState.restartCount);
+        const delayMs = Math.min(requestedDelayMs, remainingSeconds * 1000);
+        const detailSuffix = result.detail ? `: ${result.detail}` : "";
+        logWarn(
+          `Worker exited (${result.reason}${detailSuffix}). Restarting in ${(delayMs / 1000).toFixed(1)}s...`,
+        );
+        await sleepWithCancel(delayMs, (cancel) => {
+          pendingDelayCancel = cancel;
+        });
+        pendingDelayCancel = null;
+        if (manualStopRequested) {
+          runState.status = "stopped";
+          runState.lastExitReason = "manual_stop";
+          runState = persistRunState(runStatePaths, runState);
+          logInfo("Stopped by user request.");
+          return 0;
+        }
+        continue;
+      }
+
+      runState.status = "failed";
+      runState.lastExitReason = result.reason || "config_fatal";
+      runState = persistRunState(runStatePaths, runState);
+      logError(`Supervisor failed with non-retriable reason: ${runState.lastExitReason}`);
+      return 1;
+    }
+  } finally {
+    process.off("SIGINT", onSigInt);
+    process.off("SIGTERM", onSigTerm);
+    if (typeof activeManualStop === "function") activeManualStop();
+    if (typeof pendingDelayCancel === "function") pendingDelayCancel();
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const storedConfig = readConfig();
@@ -1115,10 +1489,10 @@ async function main() {
     process.exit(1);
   }
 
-  const saleStartTs = Math.floor(Date.now() / 1000);
-  const saleEndTs = saleStartTs + prompted.windowSeconds;
+  const saleStartTsFixed = nowSeconds();
+  const saleEndTsFixed = saleStartTsFixed + prompted.windowSeconds;
   const effectiveEndedWindowSeconds = endedWindowSeconds ?? defaultEndedWindowSeconds;
-  const stopAfterSeconds = prompted.windowSeconds + effectiveEndedWindowSeconds;
+  const hardStopTsFixed = saleEndTsFixed + effectiveEndedWindowSeconds;
 
   try {
     await ensurePublicExposureConfirmed(args);
@@ -1128,7 +1502,7 @@ async function main() {
   }
 
   // Spawn the server with explicit env so there's no confusion.
-  const env = {
+  const envBase = {
     ...process.env,
     PORT: String(port),
     SELLER_PAY_TO: payTo,
@@ -1147,9 +1521,6 @@ async function main() {
     OG_DESCRIPTION: ogDescription || "",
     OG_IMAGE_URL: ogImageResolved.ogImageUrl || "",
     OG_IMAGE_PATH: ogImageResolved.ogImagePath || "",
-    SALE_START_TS: String(saleStartTs),
-    SALE_END_TS: String(saleEndTs),
-    ENDED_WINDOW_SECONDS: String(effectiveEndedWindowSeconds),
     PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "",
   };
 
@@ -1192,113 +1563,59 @@ async function main() {
       if (!preflight.missing) {
         logWarn(`detail: ${preflight.reason}`);
       }
+      const runId = randomUUID();
+      const runStatePaths = createRunStatePaths(runId);
+      let runState = {
+        runId,
+        createdAtTs: nowSeconds(),
+        updatedAtTs: nowSeconds(),
+        saleStartTs: saleStartTsFixed,
+        saleEndTs: saleEndTsFixed,
+        hardStopTs: hardStopTsFixed,
+        endedWindowSeconds: effectiveEndedWindowSeconds,
+        restartCount: 0,
+        latestPublicUrl: null,
+        latestPromoUrl: null,
+        latestBuyUrl: null,
+        status: "failed",
+        lastExitReason: "config_fatal",
+      };
+      runState = persistRunState(runStatePaths, runState);
       process.exit(1);
     }
   }
 
-  const child = spawn(process.execPath, [SERVER_ENTRY], {
-    env,
-    stdio: "inherit",
-  });
-
-  let stoppedByWindow = false;
-  let tunnelFatal = false;
-
-  child.on("error", (err) => {
-    logError(`Failed to start server process: ${err.message}`);
-    process.exit(1);
-  });
-
-  let tunnelProc = null;
-  if (args.public) {
-    // Cloudflare "quick tunnel" (temporary URL)
-    // Requires `cloudflared` installed.
-    console.log("");
-    logInfo("Starting Cloudflare quick tunnel...");
-
-    tunnelProc = spawn(
-      "cloudflared",
-      ["tunnel", "--url", `http://localhost:${port}`, "--no-autoupdate"],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-
-    tunnelProc.on("error", (err) => {
-      tunnelFatal = true;
-      if (err.code === "ENOENT") {
-        logError("cloudflared not found. Install it or re-run without --public.");
-      } else {
-        logError(`Failed to start tunnel: ${err.message}`);
-      }
-      try {
-        child.kill("SIGTERM");
-      } catch {}
-    });
-
-    const urlRegex = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi;
-    const onData = (chunk) => {
-      const s = chunk.toString("utf8");
-      const m = s.match(urlRegex);
-      if (m && m[0]) {
-        const promoUrl = `${m[0]}/`;
-        const buyUrl = `${m[0]}/download`;
-        console.log("");
-        console.log(outUi.section("Public Tunnel"));
-        for (const line of outUi.formatRows([
-          { key: "public_url", value: outUi.link(m[0]) },
-          { key: "promo_link", value: outUi.link(promoUrl) },
-          { key: "buy_link", value: outUi.link(buyUrl) },
-        ])) {
-          console.log(line);
-        }
-        // only print once
-        tunnelProc?.stdout?.off("data", onData);
-        tunnelProc?.stderr?.off("data", onData);
-      }
-    };
-
-    tunnelProc.stdout.on("data", onData);
-    tunnelProc.stderr.on("data", onData);
-
-    tunnelProc.on("exit", (code, signal) => {
-      if (signal) logWarn(`Tunnel exited (signal ${signal})`);
-      else logInfo(`Tunnel exited (code ${code})`);
-    });
-  }
-
-  const stopAll = () => {
-    stoppedByWindow = true;
-    if (effectiveEndedWindowSeconds > 0) {
-      logInfo(`Ended-window elapsed (${effectiveEndedWindowSeconds}s after sale end). stopping...`);
-    } else {
-      logInfo(`Window expired (${prompted.windowSeconds}s). stopping...`);
-    }
-    try {
-      child.kill("SIGTERM");
-    } catch {}
-    try {
-      tunnelProc?.kill("SIGTERM");
-    } catch {}
+  const runId = randomUUID();
+  const runStatePaths = createRunStatePaths(runId);
+  let runState = {
+    runId,
+    createdAtTs: nowSeconds(),
+    updatedAtTs: nowSeconds(),
+    saleStartTs: saleStartTsFixed,
+    saleEndTs: saleEndTsFixed,
+    hardStopTs: hardStopTsFixed,
+    endedWindowSeconds: effectiveEndedWindowSeconds,
+    restartCount: 0,
+    latestPublicUrl: null,
+    latestPromoUrl: null,
+    latestBuyUrl: null,
+    status: "running",
+    lastExitReason: "",
   };
+  runState = persistRunState(runStatePaths, runState);
 
-  const stopTimer = setTimeout(stopAll, stopAfterSeconds * 1000);
-
-  child.on("exit", (code, signal) => {
-    clearTimeout(stopTimer);
-    try {
-      tunnelProc?.kill("SIGTERM");
-    } catch {}
-    if (tunnelFatal) process.exit(1);
-    if (stoppedByWindow && signal === "SIGTERM") process.exit(0);
-    if (signal) {
-      logError(`Server exited (signal ${signal})`);
-      process.exit(1);
-    } else {
-      logInfo(`Server exited (code ${code})`);
-      process.exit(code ?? 1);
-    }
+  const exitCode = await supervisorMain({
+    args,
+    port,
+    envBase,
+    saleStartTsFixed,
+    saleEndTsFixed,
+    hardStopTsFixed,
+    effectiveEndedWindowSeconds,
+    runStatePaths,
+    runState,
   });
+  process.exit(exitCode);
 }
 
 main().catch((e) => {

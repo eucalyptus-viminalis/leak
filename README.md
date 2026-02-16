@@ -202,6 +202,10 @@ Wizard behavior:
 - Advanced step is optional and includes facilitator, port, OG metadata, and ended-window fields.
 - Final summary always requires explicit confirmation before launch.
 - Wizard offers (optional) saving values to `~/.leak/config.json`.
+- Publish runs are always supervised: if the worker crashes, leak restarts it automatically with the remaining sale time.
+- Sale deadlines are fixed at first launch; restarts do not extend total availability.
+- Run-state is persisted at `~/.leak/runs/<run_id>.json` (plus `~/.leak/runs/latest.json` pointer).
+- In `--public` mode, tunnel URLs may rotate after a restart; leak reprints new links and persists latest URLs in run-state.
 
 ```bash
 cd ~/leak

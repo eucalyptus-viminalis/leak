@@ -41,6 +41,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - added ASCII status labels (`[info]`, `[ok]`, `[warn]`, `[error]`)
   - honors `NO_COLOR=1` and disables color in non-TTY contexts
   - publish output now emits clickable terminal hyperlinks for public/promo/buy URLs when supported
+- Added always-on publish supervision with fixed deadlines:
+  - all publish invocation paths are supervised and auto-restart on worker/tunnel crashes
+  - restarts use remaining sale time (`WINDOW_SECONDS`) while preserving fixed `SALE_START_TS` / `SALE_END_TS`
+  - added run-state persistence under `~/.leak/runs/<run_id>.json` with `~/.leak/runs/latest.json` pointer
+  - `--public` restarts reprint and persist latest public/promo/buy links in run-state
 
 ## [2026.2.17-beta.1]
 
