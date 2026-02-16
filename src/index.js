@@ -75,18 +75,27 @@ const FACILITATOR_MODE = (process.env.FACILITATOR_MODE || "testnet").trim();
 const CDP_API_KEY_ID = (process.env.CDP_API_KEY_ID || "").trim();
 const CDP_API_KEY_SECRET = (process.env.CDP_API_KEY_SECRET || "").trim();
 const DEFAULT_TESTNET_FACILITATOR_URL = "https://x402.org/facilitator";
-const DEFAULT_CDP_MAINNET_FACILITATOR_URL = "https://api.cdp.coinbase.com/platform/v2/x402";
+const DEFAULT_CDP_MAINNET_FACILITATOR_URL =
+  "https://api.cdp.coinbase.com/platform/v2/x402";
 const FACILITATOR_URL = (
   process.env.FACILITATOR_URL ||
-  (FACILITATOR_MODE === "cdp_mainnet" ? DEFAULT_CDP_MAINNET_FACILITATOR_URL : DEFAULT_TESTNET_FACILITATOR_URL)
+  (FACILITATOR_MODE === "cdp_mainnet"
+    ? DEFAULT_CDP_MAINNET_FACILITATOR_URL
+    : DEFAULT_TESTNET_FACILITATOR_URL)
 ).trim();
-const SELLER_PAY_TO = String(process.env.SELLER_PAY_TO || process.env.PAY_TO || "").trim();
+const SELLER_PAY_TO = String(
+  process.env.SELLER_PAY_TO || process.env.PAY_TO || "",
+).trim();
 const PRICE_USD = process.env.PRICE_USD || "1.00";
-const RAW_CHAIN_ID = process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
+const RAW_CHAIN_ID =
+  process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
 const ARTIFACT_PATH = process.env.ARTIFACT_PATH || process.env.PROTECTED_FILE;
 const WINDOW_SECONDS = Number(process.env.WINDOW_SECONDS || 3600);
 const MAX_GRANTS = parsePositiveInt(process.env.MAX_GRANTS, 10000);
-const GRANT_SWEEP_SECONDS = parsePositiveInt(process.env.GRANT_SWEEP_SECONDS, 60);
+const GRANT_SWEEP_SECONDS = parsePositiveInt(
+  process.env.GRANT_SWEEP_SECONDS,
+  60,
+);
 
 const CONFIRMATION_POLICY = process.env.CONFIRMATION_POLICY || "confirmed"; // optimistic|confirmed
 const CONFIRMATIONS_REQUIRED = Number(process.env.CONFIRMATIONS_REQUIRED || 1);
@@ -99,13 +108,16 @@ const OG_IMAGE_URL = (process.env.OG_IMAGE_URL || "").trim();
 const OG_IMAGE_PATH_RAW = (process.env.OG_IMAGE_PATH || "").trim();
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim();
 const OG_IMAGE_PATH = OG_IMAGE_PATH_RAW
-  ? (path.isAbsolute(OG_IMAGE_PATH_RAW) ? OG_IMAGE_PATH_RAW : path.join(__dirname, "..", OG_IMAGE_PATH_RAW))
+  ? path.isAbsolute(OG_IMAGE_PATH_RAW)
+    ? OG_IMAGE_PATH_RAW
+    : path.join(__dirname, "..", OG_IMAGE_PATH_RAW)
   : "";
 const OG_IMAGE_CACHE_CONTROL = "public, max-age=60";
 const OG_IMAGE_WIDTH = 1200;
 const OG_IMAGE_HEIGHT = 630;
 const SKILL_NAME = "leak";
-const SKILL_DESCRIPTION = "Sell or buy x402-gated digital content using the leak CLI tool";
+const SKILL_DESCRIPTION =
+  "Sell or buy x402-gated digital content using the leak CLI tool";
 const SKILL_SOURCE = "clawhub";
 const SKILL_INSTALL_COMMAND = "clawhub install leak";
 const WELL_KNOWN_CACHE_CONTROL = "public, max-age=60";
@@ -113,8 +125,14 @@ const LEGACY_DISCOVERY_DEPRECATION =
   "Deprecated endpoint; use /.well-known/skills/index.json for RFC-compatible discovery.";
 
 const SALE_START_TS = parsePositiveInt(process.env.SALE_START_TS, now());
-const SALE_END_TS = parsePositiveInt(process.env.SALE_END_TS, SALE_START_TS + WINDOW_SECONDS);
-const ENDED_WINDOW_SECONDS = parseNonNegativeInt(process.env.ENDED_WINDOW_SECONDS, 0);
+const SALE_END_TS = parsePositiveInt(
+  process.env.SALE_END_TS,
+  SALE_START_TS + WINDOW_SECONDS,
+);
+const ENDED_WINDOW_SECONDS = parseNonNegativeInt(
+  process.env.ENDED_WINDOW_SECONDS,
+  0,
+);
 
 let CHAIN_META;
 try {
@@ -130,19 +148,30 @@ const CHAIN_NUMERIC_ID = CHAIN_META.id;
 const IS_BASE_MAINNET = CHAIN_NUMERIC_ID === 8453;
 
 if (!new Set(["testnet", "cdp_mainnet"]).has(FACILITATOR_MODE)) {
-  console.error("Invalid FACILITATOR_MODE. Supported values: testnet, cdp_mainnet");
+  console.error(
+    "Invalid FACILITATOR_MODE. Supported values: testnet, cdp_mainnet",
+  );
   process.exit(1);
 }
 
 if (IS_BASE_MAINNET && FACILITATOR_MODE !== "cdp_mainnet") {
-  console.error("Invalid config: CHAIN_ID=eip155:8453 requires FACILITATOR_MODE=cdp_mainnet.");
-  console.error("Set FACILITATOR_MODE=cdp_mainnet and configure CDP_API_KEY_ID/CDP_API_KEY_SECRET.");
+  console.error(
+    "Invalid config: CHAIN_ID=eip155:8453 requires FACILITATOR_MODE=cdp_mainnet.",
+  );
+  console.error(
+    "Set FACILITATOR_MODE=cdp_mainnet and configure CDP_API_KEY_ID/CDP_API_KEY_SECRET.",
+  );
   process.exit(1);
 }
 
-if (FACILITATOR_MODE === "cdp_mainnet" && (!CDP_API_KEY_ID || !CDP_API_KEY_SECRET)) {
+if (
+  FACILITATOR_MODE === "cdp_mainnet" &&
+  (!CDP_API_KEY_ID || !CDP_API_KEY_SECRET)
+) {
   console.error("Missing CDP credentials for FACILITATOR_MODE=cdp_mainnet.");
-  console.error("Set CDP_API_KEY_ID and CDP_API_KEY_SECRET in your environment.");
+  console.error(
+    "Set CDP_API_KEY_ID and CDP_API_KEY_SECRET in your environment.",
+  );
   process.exit(1);
 }
 
@@ -161,7 +190,9 @@ if (!ARTIFACT_PATH) {
 }
 
 function absArtifactPath() {
-  return path.isAbsolute(ARTIFACT_PATH) ? ARTIFACT_PATH : path.join(__dirname, "..", ARTIFACT_PATH);
+  return path.isAbsolute(ARTIFACT_PATH)
+    ? ARTIFACT_PATH
+    : path.join(__dirname, "..", ARTIFACT_PATH);
 }
 
 const ARTIFACT_NAME = path.basename(absArtifactPath());
@@ -214,22 +245,23 @@ function imageMimeTypeFromUrl(urlString) {
 function classifyFacilitatorError(err) {
   const msg = (err?.message || String(err)).toLowerCase();
   if (
-    msg.includes("401")
-    || msg.includes("403")
-    || msg.includes("unauthorized")
-    || msg.includes("forbidden")
-    || msg.includes("authorization")
-    || msg.includes("bearer")
-    || msg.includes("jwt")
-    || msg.includes("api key")
-    || msg.includes("invalid key format")
+    msg.includes("401") ||
+    msg.includes("403") ||
+    msg.includes("unauthorized") ||
+    msg.includes("forbidden") ||
+    msg.includes("authorization") ||
+    msg.includes("bearer") ||
+    msg.includes("jwt") ||
+    msg.includes("api key") ||
+    msg.includes("invalid key format")
   ) {
     return "auth";
   }
   if (
-    msg.includes("does not support scheme")
-    || msg.includes("unsupported")
-    || (msg.includes("network") && (msg.includes("mismatch") || msg.includes("invalid")))
+    msg.includes("does not support scheme") ||
+    msg.includes("unsupported") ||
+    (msg.includes("network") &&
+      (msg.includes("mismatch") || msg.includes("invalid")))
   ) {
     return "network";
   }
@@ -240,16 +272,22 @@ function printFacilitatorHint(err) {
   const kind = classifyFacilitatorError(err);
   if (kind === "auth") {
     console.error("[hint] Facilitator authentication failed.");
-    console.error("[hint] For mainnet, set FACILITATOR_MODE=cdp_mainnet and valid CDP_API_KEY_ID/CDP_API_KEY_SECRET.");
+    console.error(
+      "[hint] For mainnet, set FACILITATOR_MODE=cdp_mainnet and valid CDP_API_KEY_ID/CDP_API_KEY_SECRET.",
+    );
     return;
   }
   if (kind === "network") {
     console.error("[hint] Facilitator/network mismatch.");
-    console.error("[hint] Verify CHAIN_ID and FACILITATOR_URL/FACILITATOR_MODE are aligned.");
+    console.error(
+      "[hint] Verify CHAIN_ID and FACILITATOR_URL/FACILITATOR_MODE are aligned.",
+    );
     return;
   }
   if (IS_BASE_MAINNET) {
-    console.error("[hint] Base mainnet requires a mainnet-capable facilitator and valid auth.");
+    console.error(
+      "[hint] Base mainnet requires a mainnet-capable facilitator and valid auth.",
+    );
   }
 }
 
@@ -270,7 +308,9 @@ function createCdpAuthHeadersFactory() {
     try {
       ({ generateJwt } = await import("@coinbase/cdp-sdk/auth"));
     } catch {
-      throw new Error("CDP auth helper unavailable. Install @coinbase/cdp-sdk and retry.");
+      throw new Error(
+        "CDP auth helper unavailable. Install @coinbase/cdp-sdk and retry.",
+      );
     }
 
     const createAuthorization = async (requestMethod, requestPath) => {
@@ -300,7 +340,9 @@ async function preflightCdpAuth() {
   try {
     ({ generateJwt } = await import("@coinbase/cdp-sdk/auth"));
   } catch {
-    console.error("[startup] Missing CDP auth dependency. Install @coinbase/cdp-sdk.");
+    console.error(
+      "[startup] Missing CDP auth dependency. Install @coinbase/cdp-sdk.",
+    );
     process.exit(1);
   }
 
@@ -329,8 +371,7 @@ function promoModel(req) {
   const downloadUrl = `${baseUrl}/download`;
   const ogTitle = OG_TITLE || ARTIFACT_NAME;
   const ogDescription =
-    OG_DESCRIPTION ||
-    `$${PRICE_USD} to unlock ${ARTIFACT_NAME}`;
+    OG_DESCRIPTION || `$${PRICE_USD} to unlock ${ARTIFACT_NAME}`;
   const imageAlt = `${ogTitle} preview image`;
 
   let imageUrl = `${baseUrl}/og.png`;
@@ -423,7 +464,8 @@ Do not explain x402 internals unless the user explicitly asks.
 function buildAgentQuickPath(promoUrl, downloadUrl) {
   const safePromoUrl = String(promoUrl || "").trim();
   const safeDownloadUrl = String(downloadUrl || "").trim();
-  const buyTarget = safePromoUrl || safeDownloadUrl || "<promo_or_download_url>";
+  const buyTarget =
+    safePromoUrl || safeDownloadUrl || "<promo_or_download_url>";
   const buyScriptCommand = `bash skills/leak/scripts/buy.sh "${buyTarget}" --buyer-private-key-file <buyer_key_file_path>`;
 
   return {
@@ -466,9 +508,95 @@ function renderAgentQuickPathHtmlBlock(fastPath) {
     </section>`;
 }
 
+function renderPromoSharedContent({ promoUrl, downloadUrl, saleEndTs }) {
+  const fastPath = buildAgentQuickPath(promoUrl, downloadUrl);
+  const expiresIso = new Date(saleEndTs * 1000).toISOString();
+  const humanActionText = "Just send the link to this page to your agent";
+
+  return `
+    <div class="kv"><strong>Price:</strong> ${escapeHtml(PRICE_USD)} USD equivalent</div>
+    <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_NAME)} (${escapeHtml(CHAIN_ID)})</div>
+    <div class="kv"><strong>Sale end:</strong> <span id="sale-end-local" data-sale-end-iso="${escapeHtml(expiresIso)}">${escapeHtml(expiresIso)}</span></div>
+    ${renderAgentQuickPathHtmlBlock(fastPath)}
+
+    <div class="prompt-head">
+      <p><strong>Human action</strong></p>
+      <button class="copy-btn" id="copy-link-btn" type="button" aria-label="Copy page link">Copy link</button>
+      <span class="copy-status" id="copy-link-status" aria-live="polite"></span>
+    </div>
+    <pre id="human-action-text">${escapeHtml(humanActionText)}</pre>
+    <p class="install-note">
+      Want to know more about <code>leak</code>? Visit
+      <a href="https://github.com/eucalyptus-viminalis/leak">github.com/eucalyptus-viminalis/leak</a>
+      or search for leak on clawhub.
+    </p>
+  `;
+}
+
+function renderPromoSharedClientScript(promoUrl) {
+  return `<script>
+    (() => {
+      const button = document.getElementById("copy-link-btn");
+      const status = document.getElementById("copy-link-status");
+      const safePromoUrl = ${toSafeJsonForScript(promoUrl)};
+      const saleEndLocal = document.getElementById("sale-end-local");
+
+      if (saleEndLocal) {
+        const saleEndIso = saleEndLocal.getAttribute("data-sale-end-iso") || "";
+        const saleEndDate = new Date(saleEndIso);
+        if (!Number.isNaN(saleEndDate.getTime())) {
+          try {
+            const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+            saleEndLocal.textContent = formatter.format(saleEndDate) + " (local time)";
+          } catch {
+            saleEndLocal.textContent = saleEndDate.toLocaleString() + " (local time)";
+          }
+        }
+      }
+
+      if (!button || !safePromoUrl) return;
+
+      const setStatus = (text) => {
+        if (status) status.textContent = text;
+      };
+
+      button.addEventListener("click", async () => {
+        const original = "Copy link";
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(safePromoUrl);
+          } else {
+            const ta = document.createElement("textarea");
+            ta.value = safePromoUrl;
+            ta.setAttribute("readonly", "");
+            ta.style.position = "absolute";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+          }
+          button.textContent = "Copied";
+          setStatus("Copied to clipboard.");
+          setTimeout(() => {
+            button.textContent = original;
+            setStatus("");
+          }, 1500);
+        } catch {
+          setStatus("Copy failed. Select and copy manually.");
+        }
+      });
+    })();
+  </script>`;
+}
+
 function renderUnpaidDownloadGuidancePage(requestUrl) {
   const urls = urlsForQuickPathFromRequestUrl(requestUrl);
-  const fastPath = buildAgentQuickPath(urls.promoUrl, urls.downloadUrl);
+  const sharedContent = renderPromoSharedContent({
+    promoUrl: urls.promoUrl,
+    downloadUrl: urls.downloadUrl,
+    saleEndTs: SALE_END_TS,
+  });
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -481,8 +609,20 @@ function renderUnpaidDownloadGuidancePage(requestUrl) {
     h1 { margin: 0 0 12px; font-size: 24px; }
     h2 { margin: 0 0 10px; font-size: 18px; }
     p { line-height: 1.5; }
+    .kv { margin: 14px 0; font-size: 14px; color: #333; }
     code, pre { background: #f0f0eb; border-radius: 6px; padding: 2px 6px; }
     pre { padding: 10px; overflow-x: auto; }
+    .prompt-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .prompt-head p { margin: 0; }
+    button.copy-btn { border: 1px solid #bdbdae; background: #f5f5ef; color: #1f1f1f; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px; }
+    button.copy-btn:hover { background: #ecece4; }
+    .copy-status { font-size: 12px; color: #3f3f3f; min-height: 1em; }
+    .install-note { margin-top: 16px; font-size: 13px; color: #2f2f2f; }
+    .install-note a { color: #1f1f1f; }
+    .agent-quick-path { margin: 16px 0; padding: 14px; border: 1px solid #d8d8d0; border-radius: 8px; background: #fafaf6; }
+    .agent-quick-path h2 { margin: 0 0 8px; font-size: 18px; }
+    .agent-quick-path ol { margin: 8px 0 8px 20px; }
+    .agent-quick-path p { margin: 8px 0 0; }
     ol { margin: 10px 0 12px 20px; }
   </style>
 </head>
@@ -490,10 +630,10 @@ function renderUnpaidDownloadGuidancePage(requestUrl) {
   <main class="card">
     <h1>402 Payment Required</h1>
     <p>This URL is paywalled. Use the leak skill fast path below.</p>
-    <p><strong>Promo URL:</strong> <code>${escapeHtml(fastPath.promoUrl)}</code></p>
-    <p><strong>x402 URL:</strong> <code>${escapeHtml(fastPath.downloadUrl)}</code></p>
-    ${renderAgentQuickPathHtmlBlock(fastPath)}
+    <div class="kv"><strong>Resource:</strong> ${escapeHtml(ARTIFACT_NAME)}</div>
+    ${sharedContent}
   </main>
+  ${renderPromoSharedClientScript(urls.promoUrl)}
 </body>
 </html>`;
 }
@@ -537,7 +677,6 @@ function renderPromoPage(model, { ended }) {
     ? `This leak has ended. ${model.ogDescription}`
     : model.ogDescription;
   const expiresIso = new Date(model.saleEndTs * 1000).toISOString();
-  const fastPath = buildAgentQuickPath(model.promoUrl, model.downloadUrl);
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -551,18 +690,30 @@ function renderPromoPage(model, { ended }) {
       url: model.downloadUrl,
       price: PRICE_USD,
       priceCurrency: "USD",
-      availability: ended ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+      availability: ended
+        ? "https://schema.org/OutOfStock"
+        : "https://schema.org/InStock",
       validThrough: expiresIso,
     },
     additionalProperty: [
       { "@type": "PropertyValue", name: "paymentProtocol", value: "x402" },
-      { "@type": "PropertyValue", name: "paymentSettlementCurrency", value: "USDC" },
+      {
+        "@type": "PropertyValue",
+        name: "paymentSettlementCurrency",
+        value: "USDC",
+      },
       { "@type": "PropertyValue", name: "network", value: CHAIN_ID },
-      { "@type": "PropertyValue", name: "downloadUrl", value: model.downloadUrl },
+      {
+        "@type": "PropertyValue",
+        name: "downloadUrl",
+        value: model.downloadUrl,
+      },
     ],
   };
   const safeJsonLd = toSafeJsonForScript(jsonLd);
-  const secureImageUrl = model.imageUrl.startsWith("https://") ? model.imageUrl : "";
+  const secureImageUrl = model.imageUrl.startsWith("https://")
+    ? model.imageUrl
+    : "";
   const ogImageSecureUrlMeta = secureImageUrl
     ? `<meta property="og:image:secure_url" content="${escapeHtml(secureImageUrl)}" />`
     : "";
@@ -575,8 +726,11 @@ function renderPromoPage(model, { ended }) {
   const ogImageHeightMeta = Number.isFinite(model.imageHeight)
     ? `<meta property="og:image:height" content="${model.imageHeight}" />`
     : "";
-
-  const humanActionText = "Just send the link to this page to your agent";
+  const sharedContent = renderPromoSharedContent({
+    promoUrl: model.promoUrl,
+    downloadUrl: model.downloadUrl,
+    saleEndTs: model.saleEndTs,
+  });
 
   return `<!doctype html>
 <html lang="en">
@@ -632,77 +786,9 @@ function renderPromoPage(model, { ended }) {
     <div class="state">${escapeHtml(stateLabel)}</div>
     <h1>${escapeHtml(pageTitle)}</h1>
 
-    <div class="kv"><strong>Price:</strong> ${escapeHtml(PRICE_USD)} USD equivalent</div>
-    <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_NAME)} (${escapeHtml(CHAIN_ID)})</div>
-    <div class="kv"><strong>Sale end:</strong> <span id="sale-end-local" data-sale-end-iso="${escapeHtml(expiresIso)}">${escapeHtml(expiresIso)}</span></div>
-    ${renderAgentQuickPathHtmlBlock(fastPath)}
-
-    <div class="prompt-head">
-      <p><strong>Human action</strong></p>
-      <button class="copy-btn" id="copy-link-btn" type="button" aria-label="Copy page link">Copy link</button>
-      <span class="copy-status" id="copy-link-status" aria-live="polite"></span>
-    </div>
-    <pre id="human-action-text">${escapeHtml(humanActionText)}</pre>
-    <p class="install-note">
-      Want to know more about <code>leak</code>? Visit
-      <a href="https://github.com/eucalyptus-viminalis/leak">github.com/eucalyptus-viminalis/leak</a>
-      or search for leak on clawhub.
-    </p>
+    ${sharedContent}
   </main>
-  <script>
-    (() => {
-      const button = document.getElementById("copy-link-btn");
-      const status = document.getElementById("copy-link-status");
-      const promoUrl = ${toSafeJsonForScript(model.promoUrl)};
-      const saleEndLocal = document.getElementById("sale-end-local");
-
-      if (saleEndLocal) {
-        const saleEndIso = saleEndLocal.getAttribute("data-sale-end-iso") || "";
-        const saleEndDate = new Date(saleEndIso);
-        if (!Number.isNaN(saleEndDate.getTime())) {
-          try {
-            const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
-            saleEndLocal.textContent = formatter.format(saleEndDate) + " (local time)";
-          } catch {
-            saleEndLocal.textContent = saleEndDate.toLocaleString() + " (local time)";
-          }
-        }
-      }
-
-      if (!button || !promoUrl) return;
-
-      const setStatus = (text) => {
-        if (status) status.textContent = text;
-      };
-
-      button.addEventListener("click", async () => {
-        const original = "Copy link";
-        try {
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(promoUrl);
-          } else {
-            const ta = document.createElement("textarea");
-            ta.value = promoUrl;
-            ta.setAttribute("readonly", "");
-            ta.style.position = "absolute";
-            ta.style.left = "-9999px";
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand("copy");
-            document.body.removeChild(ta);
-          }
-          button.textContent = "Copied";
-          setStatus("Copied to clipboard.");
-          setTimeout(() => {
-            button.textContent = original;
-            setStatus("");
-          }, 1500);
-        } catch {
-          setStatus("Copy failed. Select and copy manually.");
-        }
-      });
-    })();
-  </script>
+  ${renderPromoSharedClientScript(model.promoUrl)}
 </body>
 </html>`;
 }
@@ -782,7 +868,8 @@ function validateAndConsumeToken(token) {
     return { ok: false, reason: "token expired" };
   }
   if (g.downloadsLeft !== null) {
-    if (g.downloadsLeft <= 0) return { ok: false, reason: "download limit reached" };
+    if (g.downloadsLeft <= 0)
+      return { ok: false, reason: "download limit reached" };
     g.downloadsLeft -= 1;
   }
   return { ok: true };
@@ -798,7 +885,10 @@ if (FACILITATOR_MODE === "cdp_mainnet") {
   facilitatorConfig.createAuthHeaders = createCdpAuthHeadersFactory();
 }
 const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfig);
-const coreServer = new x402ResourceServer(facilitatorClient).register(CHAIN_ID, new ExactEvmScheme());
+const coreServer = new x402ResourceServer(facilitatorClient).register(
+  CHAIN_ID,
+  new ExactEvmScheme(),
+);
 
 // Route config for x402HTTPResourceServer
 const routes = {
@@ -826,7 +916,9 @@ try {
   await httpServer.initialize();
 } catch (err) {
   console.error("[startup] Failed to initialize x402 route configuration.");
-  console.error(`[startup] facilitator=${FACILITATOR_URL} mode=${FACILITATOR_MODE} network=${CHAIN_ID}`);
+  console.error(
+    `[startup] facilitator=${FACILITATOR_URL} mode=${FACILITATOR_MODE} network=${CHAIN_ID}`,
+  );
   if (Array.isArray(err?.errors) && err.errors.length > 0) {
     for (const e of err.errors) {
       console.error(`[startup] ${e.message || JSON.stringify(e)}`);
@@ -988,7 +1080,8 @@ app.get("/.well-known/leak", (req, res) => {
         source: SKILL_SOURCE,
         install_command: SKILL_INSTALL_COMMAND,
       },
-      message: "This leak has expired, but you can install the leak skill for future purchases",
+      message:
+        "This leak has expired, but you can install the leak skill for future purchases",
       deprecation: LEGACY_DISCOVERY_DEPRECATION,
       discovery_index_url: discoveryPath,
       rfc_resource_url: rfcResourcePath,
@@ -1033,6 +1126,7 @@ app.use("/download", async (req, res, next) => {
   // NOTE: because this middleware is mounted at "/download", Express strips the mount
   // path and `req.path` becomes "/". x402 route matching needs the *full* path.
   const fullPath = `${req.baseUrl || ""}${req.path || ""}`;
+  const requestUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
 
   const adapter = {
     getHeader(name) {
@@ -1040,8 +1134,10 @@ app.use("/download", async (req, res, next) => {
       if (v) return v;
       // legacy support: treat X-PAYMENT as PAYMENT-SIGNATURE (same base64 JSON format)
       const lower = String(name).toLowerCase();
-      if (lower === "payment-signature") return req.get("x-payment") || undefined;
-      if (lower === "payment-required") return req.get("payment-required") || undefined;
+      if (lower === "payment-signature")
+        return req.get("x-payment") || undefined;
+      if (lower === "payment-required")
+        return req.get("payment-required") || undefined;
       return undefined;
     },
     getMethod() {
@@ -1051,7 +1147,7 @@ app.use("/download", async (req, res, next) => {
       return fullPath;
     },
     getUrl() {
-      return `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+      return requestUrl;
     },
     getAcceptHeader() {
       return req.get("accept") || "";
@@ -1072,7 +1168,9 @@ app.use("/download", async (req, res, next) => {
       method: req.method,
     });
   } catch (err) {
-    console.error(`[x402] payment handshake failed: ${err?.message || String(err)}`);
+    console.error(
+      `[x402] payment handshake failed: ${err?.message || String(err)}`,
+    );
     printFacilitatorHint(err);
     return res.status(502).json({ error: "payment gateway unavailable" });
   }
@@ -1080,7 +1178,21 @@ app.use("/download", async (req, res, next) => {
   if (result.type === "no-payment-required") return next();
 
   if (result.type === "payment-error") {
-    for (const [k, v] of Object.entries(result.response.headers || {})) res.setHeader(k, v);
+    for (const [k, v] of Object.entries(result.response.headers || {}))
+      res.setHeader(k, v);
+
+    const isUnpaidBrowser402 =
+      result.response.status === 402 &&
+      (req.get("accept") || "").includes("text/html") &&
+      (req.get("user-agent") || "").includes("Mozilla") &&
+      !req.get("payment-signature") &&
+      !req.get("x-payment");
+
+    if (isUnpaidBrowser402) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(402).send(renderUnpaidDownloadGuidancePage(requestUrl));
+    }
+
     return res.status(result.response.status).send(result.response.body ?? "");
   }
 
@@ -1100,16 +1212,21 @@ app.get("/download", async (req, res) => {
   }
 
   // 1) If caller already has a valid access token, serve the artifact.
-  const token = typeof req.query.token === "string" ? req.query.token : undefined;
+  const token =
+    typeof req.query.token === "string" ? req.query.token : undefined;
   if (token) {
     const check = validateAndConsumeToken(token);
     if (!check.ok) return res.status(403).json({ error: check.reason });
 
     const p = absArtifactPath();
-    if (!fs.existsSync(p)) return res.status(404).json({ error: "artifact not found" });
+    if (!fs.existsSync(p))
+      return res.status(404).json({ error: "artifact not found" });
 
     res.setHeader("Content-Type", MIME_TYPE);
-    res.setHeader("Content-Disposition", `attachment; filename=\"${path.basename(p)}\"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=\"${path.basename(p)}\"`,
+    );
     return fs.createReadStream(p).pipe(res);
   }
 
@@ -1124,7 +1241,9 @@ app.get("/download", async (req, res) => {
         req.x402.declaredExtensions,
       );
     } catch (err) {
-      console.error(`[x402] settlement request failed: ${err?.message || String(err)}`);
+      console.error(
+        `[x402] settlement request failed: ${err?.message || String(err)}`,
+      );
       printFacilitatorHint(err);
       return res.status(502).json({ error: "payment settlement unavailable" });
     }
@@ -1137,8 +1256,12 @@ app.get("/download", async (req, res) => {
       });
     }
 
-    for (const [k, v] of Object.entries(settle.headers || {})) res.setHeader(k, v);
-    res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
+    for (const [k, v] of Object.entries(settle.headers || {}))
+      res.setHeader(k, v);
+    res.setHeader(
+      "Access-Control-Expose-Headers",
+      "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+    );
   }
 
   const t = mintGrant();
