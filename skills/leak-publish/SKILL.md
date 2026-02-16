@@ -2,7 +2,7 @@
 name: leak-publish
 description: Publish local files behind an x402 payment gate with explicit public-exposure consent using a preinstalled leak CLI.
 compatibility: Requires access to the internet
-version: 2026.2.17-beta.1
+version: 2026.2.17
 metadata:
   openclaw:
     emoji: 📡
