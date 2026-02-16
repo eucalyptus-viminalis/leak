@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Added multi-artifact hosting via new `leak host` command:
+  - runs one leak worker per route with path-prefix routing behind a shared local proxy
+  - supports route-scoped publish settings (including per-route `price` and `payTo`)
+  - added example config at `examples/multi-host.example.json`.
+- Added host public-ingress modes with runtime origin resolution:
+  - local-only by default
+  - `--public` mode creates one shared Cloudflare quick tunnel (when `publicOrigin` is not configured)
+  - configured `publicOrigin` remains supported and takes precedence in `--public` mode.
+- Added host public-exposure safety parity with single-file publish:
+  - `leak host --public` now enforces `--public-confirm I_UNDERSTAND_PUBLIC_EXPOSURE` in non-interactive mode.
+- Improved host startup output UX:
+  - removed noisy per-route info lines
+  - consolidated public URL output into a single `Public Tunnel` summary printed after worker startup banners (with timeout fallback).
+- Added access-mode enum hints in `examples/multi-host.example.json`, referencing source of truth in `src/access_mode.js`.
 - Added new access-mode model with explicit download-code terminology across CLI, config, env, and server runtime:
   - `no-download-code-no-payment`
   - `download-code-only-no-payment`

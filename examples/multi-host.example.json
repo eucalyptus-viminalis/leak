@@ -1,0 +1,50 @@
+{
+  "_hints": {
+    "accessMode_source_of_truth": "src/access_mode.js (ACCESS_MODE_VALUES)",
+    "accessMode_allowed_values": [
+      "no-download-code-no-payment",
+      "download-code-only-no-payment",
+      "payment-only-no-download-code",
+      "download-code-and-payment"
+    ]
+  },
+  "proxy": {
+    "host": "127.0.0.1",
+    "port": 4080
+  },
+  "defaults": {
+    "window": "1h",
+    "network": "eip155:84532",
+    "payTo": "0x1111111111111111111111111111111111111111",
+    "price": "0.01",
+    "facilitatorMode": "testnet",
+    "facilitatorUrl": "https://x402.org/facilitator",
+    "confirmationPolicy": "confirmed",
+    "endedWindowSeconds": 86400
+  },
+  "routes": [
+    {
+      "slug": "lolboy",
+      "prefix": "/leak/lolboy",
+      "port": 4101,
+      "artifactPath": "./protected/lol.mp3",
+      "accessMode": "payment-only-no-download-code",
+      "ogTitle": "lolboy",
+      "ogDescription": "limited drop",
+      "payTo": "0x1111111111111111111111111111111111111111",
+      "price": "0.01"
+    },
+    {
+      "slug": "peter",
+      "prefix": "/leak/peter",
+      "port": 4102,
+      "artifactPath": "./protected/peterkek.mp3",
+      "accessMode": "download-code-and-payment",
+      "downloadCode": "friends-only",
+      "ogTitle": "peter",
+      "ogDescription": "friends release",
+      "payTo": "0x1111111111111111111111111111111111111111",
+      "price": "0.02"
+    }
+  ]
+}

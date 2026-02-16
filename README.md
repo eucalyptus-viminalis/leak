@@ -63,6 +63,12 @@ leak --file ./your-file.bin --public
 leak buy <promo_or_download_link> [--download-code <code>] [--buyer-private-key-file <path>]
 ```
 
+**Hosting multiple files on one machine (path prefixes)**:
+
+```bash
+leak host --config ./examples/multi-host.example.json
+```
+
 ### Seller Quickstart 1: Local testnet sale (fastest path)
 
 Goal: run a local sale and verify the x402 flow end to end.
@@ -110,6 +116,73 @@ Use the output URLs like this:
 - agents will use `https://<tunnel>/download` to buy (x402-protected link)
 - open the promo URL in a browser and confirm title, description, and image render correctly for social cards
 - while the tunnel is still running, run the Buyer section below to validate payment + download end-to-end
+
+### Seller Quickstart 3: Multi-file hosting with one domain + path prefixes
+
+Goal: run multiple leak endpoints on one machine and expose them as:
+- `https://<host>/leak/lolboy/` + `/download`
+- `https://<host>/leak/peter/` + `/download`
+
+Use the built-in multi-host runner:
+
+```bash
+leak host --config ./examples/multi-host.example.json
+```
+
+What this command does:
+- starts one leak worker per route (one local port per artifact)
+- starts one reverse proxy that maps `/<prefix>/*` to the right worker
+- sets `PUBLIC_BASE_URL` per worker to `<resolvedOrigin><prefix>` so promo/download URLs are prefix-aware
+
+Dry-run before launching:
+
+```bash
+leak host --config ./examples/multi-host.example.json --dry-run
+```
+
+Local validation with the default example:
+
+```bash
+curl -i http://127.0.0.1:4080/leak/lolboy/
+curl -i http://127.0.0.1:4080/leak/lolboy/download
+curl -i http://127.0.0.1:4080/leak/peter/
+curl -i http://127.0.0.1:4080/health
+```
+
+Public origin modes:
+- local-only (default): no tunnel, origin is `http://127.0.0.1:<proxy-port>`
+- quick tunnel: add `--public` and leak host will start one Cloudflare quick tunnel for the shared proxy
+- configured origin: set optional `publicOrigin` in config for named/manual ingress
+
+Quick tunnel run (non-interactive):
+
+```bash
+leak host --config ./examples/multi-host.example.json --public --public-confirm I_UNDERSTAND_PUBLIC_EXPOSURE
+```
+
+Configured-origin run (named/manual tunnel):
+
+```json
+{
+  "publicOrigin": "https://your-hostname.example",
+  "proxy": { "host": "127.0.0.1", "port": 4080 },
+  "routes": [ ... ]
+}
+```
+
+Precedence note:
+- if `--public` is used and `publicOrigin` exists in config, leak host uses configured `publicOrigin` and does not start a quick tunnel
+
+Capacity baseline (M1 Mac mini, 8 GB RAM, up to 10 concurrent downloads):
+
+| Total hosted content | RAM working set | Disk free target | Practical uplink target |
+| --- | --- | --- | --- |
+| `5 MB` | `~4-5 GB` | `>=20 GB` | `10-20 Mbps` |
+| `50 MB` | `~4-5 GB` | `>=20 GB` | `20-50 Mbps` |
+| `500 MB` | `~4.5-5.5 GB` | `>=22-25 GB` | `50-150 Mbps` |
+| `5 GB` | `~5-6 GB` | `>=30-40 GB` | `200+ Mbps` |
+
+These numbers assume streamed downloads (no whole-file memory loading), one route per worker, and one local reverse proxy.
 
 ### Buyer Skeleton (direct CLI)
 

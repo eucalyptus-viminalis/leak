@@ -35,6 +35,7 @@ function printHelp() {
   console.log("  leak publish [prefill flags]");
   console.log("  leak --file <path> [publish flags]");
   console.log("  leak buy <promo_or_download_url> [buy flags]");
+  console.log("  leak host --config <path> [host flags]");
   console.log("  leak config [show|--write-env]");
   console.log("  leak version");
   console.log("");
@@ -50,12 +51,20 @@ function printHelp() {
   console.log("  --buyer-private-key-file <path> | --buyer-private-key-stdin");
   console.log("  --out <path> | --basename <name>");
   console.log("");
+  console.log(outUi.section("Host Flags"));
+  console.log("  --config <path>");
+  console.log("  --proxy-host <host> --proxy-port <port>");
+  console.log("  --public --public-confirm I_UNDERSTAND_PUBLIC_EXPOSURE");
+  console.log("  --dry-run");
+  console.log("");
   console.log(outUi.section("Examples"));
   console.log("  leak publish");
   console.log("  leak publish --file ./song.mp3 --access-mode download-code-only-no-payment");
   console.log("  leak --file ./song.mp3 --access-mode payment-only-no-download-code");
   console.log("  leak --file ./song.mp3 --access-mode download-code-only-no-payment --download-code \"friends-only\"");
   console.log("  leak buy https://xxxx.trycloudflare.com/ --download-code \"friends-only\"");
+  console.log("  leak host --config ./examples/multi-host.example.json --dry-run");
+  console.log("  leak host --config ./examples/multi-host.example.json --public --public-confirm I_UNDERSTAND_PUBLIC_EXPOSURE");
   console.log("  leak config");
   console.log("  leak version");
   console.log("");
@@ -103,6 +112,8 @@ if (sub === "leak") {
   runSubcommand("leak.js", ["--wizard", ...process.argv.slice(3)]);
 } else if (sub === "buy") {
   runSubcommand("buy.js", process.argv.slice(3));
+} else if (sub === "host") {
+  runSubcommand("host.js", process.argv.slice(3));
 } else if (sub === "config") {
   runSubcommand("config.js", process.argv.slice(3));
 } else {
