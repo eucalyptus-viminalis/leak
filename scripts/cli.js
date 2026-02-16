@@ -28,6 +28,7 @@ function printHelp() {
   console.log("Leak CLI");
   console.log("");
   console.log("Usage:");
+  console.log("  leak publish [prefill flags]");
   console.log("  leak --file <path> [publish flags]");
   console.log("  leak buy <promo_or_download_url> [buy flags]");
   console.log("  leak config [show|--write-env]");
@@ -46,6 +47,8 @@ function printHelp() {
   console.log("  --out <path> | --basename <name>");
   console.log("");
   console.log("Examples:");
+  console.log("  leak publish");
+  console.log("  leak publish --file ./song.mp3 --access-mode download-code-only-no-payment");
   console.log("  leak --file ./song.mp3 --access-mode payment-only-no-download-code");
   console.log("  leak --file ./song.mp3 --access-mode download-code-only-no-payment --download-code \"friends-only\"");
   console.log("  leak buy https://xxxx.trycloudflare.com/ --download-code \"friends-only\"");
@@ -91,6 +94,8 @@ if (sub === "--version" || sub === "-v" || sub === "version") {
 
 if (sub === "leak") {
   runSubcommand("leak.js", process.argv.slice(3));
+} else if (sub === "publish") {
+  runSubcommand("leak.js", ["--wizard", ...process.argv.slice(3)]);
 } else if (sub === "buy") {
   runSubcommand("buy.js", process.argv.slice(3));
 } else if (sub === "config") {

@@ -25,6 +25,12 @@ leak version
 # or: leak --version
 ```
 
+Start interactive publish wizard:
+
+```bash
+leak publish
+```
+
 OpenClaw skill docs live in this repo at:
 - [`/skills/leak-buy`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak-buy)
 - [`/skills/leak-publish`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak-publish)
@@ -42,6 +48,12 @@ Once `leak` is configured, commands become very simple to use:
 **Selling**:
 
 ```bash
+leak publish
+```
+
+or direct flags:
+
+```bash
 leak --file ./your-file.bin --public
 ```
 
@@ -54,6 +66,14 @@ leak buy <promo_or_download_link> [--download-code <code>] [--buyer-private-key-
 ### Seller Quickstart 1: Local testnet sale (fastest path)
 
 Goal: run a local sale and verify the x402 flow end to end.
+
+Interactive wizard path:
+
+```bash
+leak publish --file ./your-file.bin
+```
+
+Direct flags path:
 
 Prereqs: fund a buyer test wallet on Base Sepolia ([Circle Faucet](https://faucet.circle.com)); no CDP mainnet setup is needed. 
 
@@ -169,6 +189,19 @@ Reference: see [Testnet vs Mainnet facilitator setup](#testnet-vs-mainnet-facili
 ## Leak CLI (recommended)
 
 The easiest way to run the server is the `leak` CLI, which prompts for missing info (price + duration) and auto-stops after the sale window (or `window + ended-window`, if configured).
+
+Recommended for humans: use `leak publish` for a guided interactive wizard.
+Recommended for scripts/automation: use `leak --file ...` direct flags.
+
+```bash
+leak publish
+```
+
+Wizard behavior:
+- Basic step always asks core publish inputs (file, access mode, price/window, network, public tunnel).
+- Advanced step is optional and includes facilitator, port, OG metadata, and ended-window fields.
+- Final summary always requires explicit confirmation before launch.
+- Wizard offers (optional) saving values to `~/.leak/config.json`.
 
 ```bash
 cd ~/leak
