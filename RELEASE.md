@@ -146,6 +146,14 @@ openclaw clawhub validate --cwd skills/leak
 openclaw clawhub publish --cwd skills/leak --target public
 ```
 
+```bash
+clawhub publish skills/leak \                                   
+  --slug leak \
+  --version <stable-version> \
+  --tags latest \
+  --changelog "<changes>"
+```
+
 Prerelease / Beta:
 
 ```bash
