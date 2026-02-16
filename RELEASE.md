@@ -44,7 +44,7 @@ npm version prerelease --preid=beta --no-git-tag-version
 
 ### 2) Sync + changelog
 
-- Set `version:` in `skills/leak/SKILL.md` to match `package.json`.
+- Set `version:` in `skills/leak/SKILL.md` to match `package.json` and any other mention of leak-cli version.
 - Add/update release notes in `CHANGELOG.md` for this prerelease version.
 
 ### 3) Run gates
@@ -86,7 +86,7 @@ npm version <stable-version> --no-git-tag-version
 
 ### 2) Sync + changelog + gates
 
-- Sync `skills/leak/SKILL.md`.
+- Sync `skills/leak/SKILL.md`: 3 places.
 - Move release notes into `CHANGELOG.md` section for `<stable-version>`.
 - Run required gates with `RELEASE_VERSION=<stable-version>`.
 

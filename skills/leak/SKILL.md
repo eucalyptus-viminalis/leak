@@ -48,7 +48,7 @@ leak --help
 If `leak` is not installed, use pinned one-off execution:
 
 ```bash
-npx -y leak-cli@2026.2.14 --help
+npx -y leak-cli@2026.2.16 --help
 ```
 
 Do not run auto-install or git-clone fallback scripts from this skill.
@@ -199,7 +199,7 @@ bash skills/leak/scripts/buy.sh "https://xxxx.trycloudflare.com/" --buyer-privat
 
 - `leak: command not found`:
   - Install globally: `npm i -g leak-cli`
-  - Or run pinned: `npx -y leak-cli@2026.2.14 --help`
+  - Or run pinned: `npx -y leak-cli@2026.2.16 --help`
 - `Invalid seller payout address`:
   - Use a valid Ethereum address (`0x` + 40 hex chars).
 - `--public` confirmation failed:
