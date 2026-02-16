@@ -18,7 +18,9 @@ Package name: `leak-cli`
 
 Command: `leak`
 
-OpenClaw skill docs live in this repo at [`/skills/leak`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak); Clawhub listing coming soon.
+OpenClaw skill docs live in this repo at:
+- [`/skills/leak-buy`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak-buy)
+- [`/skills/leak-publish`](https://github.com/eucalyptus-viminalis/leak/tree/main/skills/leak-publish)
 
 ### Config
 
@@ -39,7 +41,7 @@ leak --file ./your-file.bin --public
 **Buying**:
 
 ```bash
-leak buy <promo_or_download_link> (--buyer-private-key-file <path> | --buyer-private-key-stdin)
+leak buy <promo_or_download_link> --buyer-private-key-file <path>
 ```
 
 ### Seller Quickstart 1: Local testnet sale (fastest path)
@@ -98,19 +100,17 @@ Security note: use a dedicated buyer key with limited funds.
 
 ### Buyer Skeleton (Clawhub skill flow)
 
-- install the `leak` skill from Clawhub
+- install the `leak-buy` skill from Clawhub
 - give your agent the promo URL (`/`) from the post (or `/download`)
 - provide a funded buyer key when prompted
 - let the agent complete payment + download through the skill
 
-Under the hood, the skill scripts try `leak` on PATH first and fall back to `npx -y leak-cli@2026.2.14` for one-off usage if needed.
+The hardened skills require a preinstalled `leak` binary on PATH.
 
 Recommended first-time agent UX for unknown URLs:
-- ask only for skill-install approval (`clawhub install leak`)
-- ask for an existing buyer key file path (default mode)
-- if user opts in and no key exists, create `./.leak/buyer.key` (hot wallet; fund minimally; user must back it up)
-- if workspace is a git repo, add `./.leak/buyer.key` to `.gitignore` so it is not tracked
-- run: `bash skills/leak/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file <buyer_key_file_path>` (or `./.leak/buyer.key` for generated fallback)
+- ask only for skill-install approval (`clawhub install leak-buy`)
+- ask for an existing buyer key file path
+- run: `bash skills/leak-buy/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file <buyer_key_file_path>`
 - avoid protocol deep-dives unless the user explicitly asks for x402 internals
 
 ### Next: Mainnet checklist (optional)
@@ -135,7 +135,7 @@ Reference: see [Testnet vs Mainnet facilitator setup](#testnet-vs-mainnet-facili
   - set available window 🪟
   - tell your agent what you b *leakin'* 🤤
 - `💦 on-demand + one-shot + ephemeral ✨ -- store for your digital goods`
-- yes, install the `leak` 🦞 `OpenClaw` 🦞 `SKILL` and you can tell your agent to do all the above for you 🪬
+- yes, install `leak-publish` (seller) and `leak-buy` (buyer) OpenClaw skills and let your agent run those flows 🪬
 
 **Buyer**:
 - download cool sh!t straight to your device
@@ -504,6 +504,8 @@ Release rules:
 - Keep versions synchronized:
   - `package.json`
   - `skills/leak/SKILL.md`
+  - `skills/leak-buy/SKILL.md`
+  - `skills/leak-publish/SKILL.md`
 - Ensure `CHANGELOG.md` has a section for the stable release version before tagging.
 - Use tag format `v<version>` for stable GitHub releases.
 

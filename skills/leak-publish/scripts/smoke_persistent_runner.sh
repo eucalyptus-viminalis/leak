@@ -4,11 +4,11 @@ set -euo pipefail
 # Smoke-test detached runner support used by publish.sh.
 #
 # Usage:
-#   bash skills/leak/scripts/smoke_persistent_runner.sh
-#   bash skills/leak/scripts/smoke_persistent_runner.sh --mode auto
-#   bash skills/leak/scripts/smoke_persistent_runner.sh --mode tmux
-#   bash skills/leak/scripts/smoke_persistent_runner.sh --sleep-seconds 20
-#   bash skills/leak/scripts/smoke_persistent_runner.sh --keep
+#   bash skills/leak-publish/scripts/smoke_persistent_runner.sh
+#   bash skills/leak-publish/scripts/smoke_persistent_runner.sh --mode auto
+#   bash skills/leak-publish/scripts/smoke_persistent_runner.sh --mode tmux
+#   bash skills/leak-publish/scripts/smoke_persistent_runner.sh --sleep-seconds 20
+#   bash skills/leak-publish/scripts/smoke_persistent_runner.sh --keep
 
 MODE="auto"
 SLEEP_SECONDS=20

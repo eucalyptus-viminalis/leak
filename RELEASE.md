@@ -11,6 +11,8 @@ Cadence is event-driven: release as often as needed.
 - Keep versions identical in:
   - `package.json`
   - `skills/leak/SKILL.md`
+  - `skills/leak-buy/SKILL.md`
+  - `skills/leak-publish/SKILL.md`
 
 ## Required Gates (Run Every Cut)
 
@@ -44,7 +46,10 @@ npm version prerelease --preid=beta --no-git-tag-version
 
 ### 2) Sync + changelog
 
-- Set `version:` in `skills/leak/SKILL.md` to match `package.json` and any other mention of leak-cli version.
+- Set `version:` in all skill files to match `package.json`:
+  - `skills/leak/SKILL.md`
+  - `skills/leak-buy/SKILL.md`
+  - `skills/leak-publish/SKILL.md`
 - Add/update release notes in `CHANGELOG.md` for this prerelease version.
 
 ### 3) Run gates
@@ -86,7 +91,10 @@ npm version <stable-version> --no-git-tag-version
 
 ### 2) Sync + changelog + gates
 
-- Sync `skills/leak/SKILL.md`: 3 places.
+- Sync all skill versions to match `package.json`:
+  - `skills/leak/SKILL.md`
+  - `skills/leak-buy/SKILL.md`
+  - `skills/leak-publish/SKILL.md`
 - Move release notes into `CHANGELOG.md` section for `<stable-version>`.
 - Run required gates with `RELEASE_VERSION=<stable-version>`.
 
@@ -142,12 +150,32 @@ Commands:
 Stable:
 
 ```bash
+openclaw clawhub validate --cwd skills/leak-buy
+openclaw clawhub publish --cwd skills/leak-buy --target public
+openclaw clawhub validate --cwd skills/leak-publish
+openclaw clawhub publish --cwd skills/leak-publish --target public
 openclaw clawhub validate --cwd skills/leak
 openclaw clawhub publish --cwd skills/leak --target public
 ```
 
 ```bash
-clawhub publish skills/leak \                                   
+clawhub publish skills/leak-buy \
+  --slug leak-buy \
+  --version <stable-version> \
+  --tags latest \
+  --changelog "<changes>"
+```
+
+```bash
+clawhub publish skills/leak-publish \
+  --slug leak-publish \
+  --version <stable-version> \
+  --tags latest \
+  --changelog "<changes>"
+```
+
+```bash
+clawhub publish skills/leak \
   --slug leak \
   --version <stable-version> \
   --tags latest \
@@ -157,7 +185,23 @@ clawhub publish skills/leak \
 Prerelease / Beta:
 
 ```bash
-clawhub publish skills/leak \                                   
+clawhub publish skills/leak-buy \
+  --slug leak-buy \
+  --version <beta-version> \
+  --tags beta \
+  --changelog "<changes>"
+```
+
+```bash
+clawhub publish skills/leak-publish \
+  --slug leak-publish \
+  --version <beta-version> \
+  --tags beta \
+  --changelog "<changes>"
+```
+
+```bash
+clawhub publish skills/leak \
   --slug leak \
   --version <beta-version> \
   --tags beta \

@@ -31,23 +31,10 @@ function isSupportedVersion(v) {
 }
 
 const pkgPath = path.join(repoRoot, "package.json");
-const skillPath = path.join(repoRoot, "skills", "leak", "SKILL.md");
-
 const pkgVersion = String(readJson(pkgPath).version || "").trim();
-const skillVersion = String(extractSkillVersion(readText(skillPath)) || "").trim();
 
 if (!pkgVersion) {
   console.error("[version-sync] package.json is missing version");
-  process.exit(1);
-}
-
-if (!skillVersion) {
-  console.error("[version-sync] skills/leak/SKILL.md is missing frontmatter version");
-  process.exit(1);
-}
-
-if (pkgVersion !== skillVersion) {
-  console.error(`[version-sync] mismatch: package.json=${pkgVersion} skills/leak/SKILL.md=${skillVersion}`);
   process.exit(1);
 }
 
@@ -57,4 +44,52 @@ if (!isSupportedVersion(pkgVersion)) {
   process.exit(1);
 }
 
-console.log(`[version-sync] ok: ${pkgVersion}`);
+const skillsDir = path.join(repoRoot, "skills");
+if (!fs.existsSync(skillsDir)) {
+  console.error(`[version-sync] skills directory not found: ${skillsDir}`);
+  process.exit(1);
+}
+
+const skillDirs = fs
+  .readdirSync(skillsDir, { withFileTypes: true })
+  .filter((ent) => ent.isDirectory())
+  .map((ent) => ent.name);
+
+const skillFiles = skillDirs
+  .map((dir) => path.join(skillsDir, dir, "SKILL.md"))
+  .filter((p) => fs.existsSync(p));
+
+if (skillFiles.length === 0) {
+  console.error("[version-sync] no skill files found under skills/*/SKILL.md");
+  process.exit(1);
+}
+
+const mismatches = [];
+for (const skillFile of skillFiles) {
+  const rel = path.relative(repoRoot, skillFile);
+  const skillVersion = String(extractSkillVersion(readText(skillFile)) || "").trim();
+
+  if (!skillVersion) {
+    mismatches.push(`${rel}: missing frontmatter version`);
+    continue;
+  }
+
+  if (!isSupportedVersion(skillVersion)) {
+    mismatches.push(`${rel}: invalid version format '${skillVersion}'`);
+    continue;
+  }
+
+  if (skillVersion !== pkgVersion) {
+    mismatches.push(`${rel}: ${skillVersion} (expected ${pkgVersion})`);
+  }
+}
+
+if (mismatches.length > 0) {
+  console.error(`[version-sync] mismatch against package.json=${pkgVersion}`);
+  for (const msg of mismatches) {
+    console.error(`- ${msg}`);
+  }
+  process.exit(1);
+}
+
+console.log(`[version-sync] ok: ${pkgVersion} (${skillFiles.length} skill files)`);

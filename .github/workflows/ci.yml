@@ -28,6 +28,9 @@ jobs:
       - name: Version sync check
         run: npm run check:version-sync
 
+      - name: Skill security checks
+        run: npm run check:skill-security
+
       - name: Syntax checks
         run: npm run check:syntax
 

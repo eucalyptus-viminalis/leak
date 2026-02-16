@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.2.17]
+
+### Changed
+
+- Hardened Clawhub/OpenClaw skill model by splitting legacy mixed skill into scoped skills:
+  - `skills/leak-buy` (buy/download only)
+  - `skills/leak-publish` (publish/sell only)
+  - `skills/leak` is now a compatibility migration stub.
+- Removed runtime dynamic package execution from skill helper scripts:
+  - no `npx -y` fallback in buy/publish skill scripts
+  - skill scripts now require preinstalled `leak` on PATH.
+- Tightened buyer key handling in `leak-buy` skill:
+  - only `--buyer-private-key-file` is allowed
+  - blocked `--buyer-private-key` and `--buyer-private-key-stdin`
+  - removed key-generation guidance from skill flow.
+- Tightened publish path safety in `leak-publish` script:
+  - rejects symlinks, directories, and non-regular files
+  - blocks sensitive file roots (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `/etc`, `/proc`, `/sys`, `/var/run/secrets`)
+  - kept persistent detached supervisor order (`systemd --user`, `launchd`, `tmux`, `screen`, `nohup`).
+- Added repository guardrails for skill security:
+  - new `scripts/check_skill_security.sh`
+  - new npm script `check:skill-security`
+  - CI now runs `check:skill-security`
+  - version sync check now validates all `skills/*/SKILL.md` files against `package.json`.
+
 ## [2026.2.16]
 
 ### Changed
