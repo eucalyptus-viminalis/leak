@@ -11,19 +11,23 @@ import {
 } from "@x402/core/http";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
+import { DOWNLOAD_CODE_HEADER } from "../src/download_code.js";
 
-const SKILL_NAME = "leak";
+const SKILL_NAME = "leak-buy";
 
 function usageAndExit(code = 1) {
   console.log(
-    "Usage: leak buy <promo_or_download_url> (--buyer-private-key-file <path> | --buyer-private-key-stdin) [--out <path> | --basename <name>]",
+    "Usage: leak buy <promo_or_download_url> [--download-code <code> | --download-code-stdin] [--buyer-private-key-file <path> | --buyer-private-key-stdin] [--out <path> | --basename <name>]",
   );
   console.log("Examples:");
   console.log(
     "  leak buy https://xxxx.trycloudflare.com/ --buyer-private-key-file ./buyer.key",
   );
   console.log(
-    "  cat ./buyer.key | leak buy https://xxxx.trycloudflare.com/download --buyer-private-key-stdin --basename myfile",
+    "  leak buy https://xxxx.trycloudflare.com/download --download-code friends-only --buyer-private-key-file ./buyer.key --basename myfile",
+  );
+  console.log(
+    `  printf '%s\\n' 'friends-only' | leak buy https://xxxx.trycloudflare.com/download --download-code-stdin --out ./downloads/file.bin`,
   );
   process.exit(code);
 }
@@ -83,18 +87,22 @@ function readPrivateKeyFromFile(filePath) {
   return firstLine;
 }
 
-function readPrivateKeyFromStdin() {
+function readFirstLineFromStdin(kindLabel) {
   let data = "";
   try {
     data = fs.readFileSync(0, "utf8");
   } catch {
-    throw new Error("Failed to read private key from stdin");
+    throw new Error(`Failed to read ${kindLabel} from stdin`);
   }
   const firstLine = String(data).split(/\r?\n/, 1)[0]?.trim() || "";
   if (!firstLine) {
-    throw new Error("No private key received on stdin");
+    throw new Error(`No ${kindLabel} received on stdin`);
   }
   return firstLine;
+}
+
+function readPrivateKeyFromStdin() {
+  return readFirstLineFromStdin("buyer private key");
 }
 
 function resolveBuyerPrivateKey(args) {
@@ -121,8 +129,31 @@ function resolveBuyerPrivateKey(args) {
   );
 }
 
+function resolveDownloadCode(args) {
+  const hasInlineCode = typeof args["download-code"] !== "undefined";
+  const hasStdinCode = Boolean(args["download-code-stdin"]);
+
+  if (hasInlineCode && hasStdinCode) {
+    throw new Error("Use exactly one download code input: --download-code or --download-code-stdin");
+  }
+  if (hasInlineCode && args["download-code"] === true) {
+    throw new Error("--download-code requires a value");
+  }
+  if (hasStdinCode && Boolean(args["buyer-private-key-stdin"])) {
+    throw new Error("--download-code-stdin cannot be combined with --buyer-private-key-stdin");
+  }
+  if (hasInlineCode) {
+    const code = String(args["download-code"] || "").trim();
+    if (!code) throw new Error("--download-code cannot be empty");
+    return code;
+  }
+  if (hasStdinCode) {
+    return readFirstLineFromStdin("download code");
+  }
+  return "";
+}
+
 function filenameFromContentDisposition(cd) {
-  // Very small parser: attachment; filename="foo.ext"
   if (!cd) return null;
   const m = String(cd).match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
   const raw = m ? (m[1] || m[2]) : null;
@@ -145,11 +176,6 @@ function explorerTxUrl(network, transaction) {
   if (network === "eip155:8453") return `https://basescan.org/tx/${transaction}`;
   if (network === "eip155:84532") return `https://sepolia.basescan.org/tx/${transaction}`;
   return null;
-}
-
-function formatTriedEndpoints(tried) {
-  if (!Array.isArray(tried) || tried.length === 0) return "";
-  return `\nTried:\n- ${tried.join("\n- ")}`;
 }
 
 function normalizeInputUrl(value) {
@@ -180,23 +206,6 @@ function normalizeSameOriginDownloadUrl(candidate, origin, sourceLabel) {
   return parsed.toString();
 }
 
-async function probeX402Endpoint(url) {
-  try {
-    const response = await fetch(url, { method: "GET" });
-    if (response.status === 402) {
-      const paymentRequiredHeader = getHeaderCaseInsensitive(response.headers, "PAYMENT-REQUIRED");
-      if (paymentRequiredHeader) return { kind: "x402", response, paymentRequiredHeader };
-      return { kind: "not-x402", response };
-    }
-    if (response.status === 410) {
-      return { kind: "ended", response };
-    }
-    return { kind: "other", response };
-  } catch (err) {
-    return { kind: "error", error: err };
-  }
-}
-
 async function fetchJsonPayload(url) {
   try {
     const response = await fetch(url, {
@@ -220,104 +229,150 @@ async function fetchJsonPayload(url) {
 
 async function resolveDownloadUrl(input) {
   const inputUrl = normalizeInputUrl(input);
-  const tried = [];
   const isRootPath = inputUrl.pathname === "/" || inputUrl.pathname === "";
   const isDownloadPath = inputUrl.pathname === "/download";
 
-  tried.push(`direct probe ${inputUrl.toString()}`);
-  const directProbe = await probeX402Endpoint(inputUrl.toString());
-  if (directProbe.kind === "x402") {
-    return {
-      downloadUrl: inputUrl.toString(),
-      firstProbe: directProbe,
-      tried,
-    };
+  if (isDownloadPath) {
+    return { downloadUrl: inputUrl.toString() };
   }
-  if (directProbe.kind === "ended") {
-    throw new Error(`Sale has ended at ${inputUrl.toString()}${formatTriedEndpoints(tried)}`);
-  }
-  if (!isRootPath && !isDownloadPath) {
+
+  if (!isRootPath) {
     throw new Error(
-      `Unsupported path for buy flow: ${inputUrl.pathname}. Use a promo URL (/) or /download URL.${formatTriedEndpoints(tried)}`,
+      `Unsupported path for buy flow: ${inputUrl.pathname}. Use a promo URL (/) or /download URL.`,
     );
   }
 
   const rfcResourceUrl = new URL(`/.well-known/skills/${SKILL_NAME}/resource.json`, inputUrl.origin).toString();
-  tried.push(`rfc resource ${rfcResourceUrl}`);
   const rfcFetch = await fetchJsonPayload(rfcResourceUrl);
   if (rfcFetch.ok && (rfcFetch.response.status === 200 || rfcFetch.response.status === 410)) {
     const resourceStatus = String(rfcFetch.body?.status || "").toLowerCase();
     if (rfcFetch.response.status === 410 || resourceStatus === "ended") {
-      throw new Error(`Sale has ended according to ${rfcResourceUrl}${formatTriedEndpoints(tried)}`);
+      throw new Error(`Sale has ended according to ${rfcResourceUrl}`);
     }
     if (typeof rfcFetch.body?.download_url === "string" && rfcFetch.body.download_url) {
-      const rfcDownloadUrl = normalizeSameOriginDownloadUrl(
-        rfcFetch.body.download_url,
-        inputUrl.origin,
-        rfcResourceUrl,
-      );
-      tried.push(`probe discovered RFC download ${rfcDownloadUrl}`);
-      const rfcProbe = await probeX402Endpoint(rfcDownloadUrl);
-      if (rfcProbe.kind === "x402") {
-        return {
-          downloadUrl: rfcDownloadUrl,
-          firstProbe: rfcProbe,
-          tried,
-        };
-      }
-      if (rfcProbe.kind === "ended") {
-        throw new Error(`Sale has ended at ${rfcDownloadUrl}${formatTriedEndpoints(tried)}`);
-      }
+      return {
+        downloadUrl: normalizeSameOriginDownloadUrl(
+          rfcFetch.body.download_url,
+          inputUrl.origin,
+          rfcResourceUrl,
+        ),
+        discovery: rfcFetch.body,
+      };
     }
   }
 
   const legacyDiscoveryUrl = new URL("/.well-known/leak", inputUrl.origin).toString();
-  tried.push(`legacy discovery ${legacyDiscoveryUrl}`);
   const legacyFetch = await fetchJsonPayload(legacyDiscoveryUrl);
   if (legacyFetch.ok && (legacyFetch.response.status === 200 || legacyFetch.response.status === 410)) {
     if (legacyFetch.response.status === 410) {
-      throw new Error(`Sale has ended according to ${legacyDiscoveryUrl}${formatTriedEndpoints(tried)}`);
+      throw new Error(`Sale has ended according to ${legacyDiscoveryUrl}`);
     }
     if (typeof legacyFetch.body?.resource?.download_url === "string" && legacyFetch.body.resource.download_url) {
-      const legacyDownloadUrl = normalizeSameOriginDownloadUrl(
-        legacyFetch.body.resource.download_url,
-        inputUrl.origin,
-        legacyDiscoveryUrl,
-      );
-      tried.push(`probe discovered legacy download ${legacyDownloadUrl}`);
-      const legacyProbe = await probeX402Endpoint(legacyDownloadUrl);
-      if (legacyProbe.kind === "x402") {
-        return {
-          downloadUrl: legacyDownloadUrl,
-          firstProbe: legacyProbe,
-          tried,
-        };
-      }
-      if (legacyProbe.kind === "ended") {
-        throw new Error(`Sale has ended at ${legacyDownloadUrl}${formatTriedEndpoints(tried)}`);
-      }
-    }
-  }
-
-  if (isRootPath) {
-    const fallbackDownloadUrl = new URL("/download", inputUrl.origin).toString();
-    tried.push(`root fallback ${fallbackDownloadUrl}`);
-    const fallbackProbe = await probeX402Endpoint(fallbackDownloadUrl);
-    if (fallbackProbe.kind === "x402") {
       return {
-        downloadUrl: fallbackDownloadUrl,
-        firstProbe: fallbackProbe,
-        tried,
+        downloadUrl: normalizeSameOriginDownloadUrl(
+          legacyFetch.body.resource.download_url,
+          inputUrl.origin,
+          legacyDiscoveryUrl,
+        ),
+        discovery: legacyFetch.body.resource,
       };
     }
-    if (fallbackProbe.kind === "ended") {
-      throw new Error(`Sale has ended at ${fallbackDownloadUrl}${formatTriedEndpoints(tried)}`);
-    }
   }
 
-  throw new Error(
-    `Could not resolve an x402 download endpoint from ${inputUrl.toString()}${formatTriedEndpoints(tried)}`,
-  );
+  return { downloadUrl: new URL("/download", inputUrl.origin).toString() };
+}
+
+function responseBodyText(response) {
+  return response.text().catch(() => "");
+}
+
+function resolveOutputPath(args, serverFilename) {
+  const safeServerFilename = sanitizeFilename(serverFilename || "downloaded.bin");
+  if (args.out) {
+    return String(args.out);
+  }
+  if (args.basename) {
+    const safeBase = sanitizeFilename(args.basename);
+    const ext = path.extname(safeServerFilename) || "";
+    return `./${safeBase}${ext}`;
+  }
+  return `./${safeServerFilename}`;
+}
+
+async function saveBinaryResponse(response, args, suggestedFilename) {
+  const serverFilename =
+    suggestedFilename ||
+    filenameFromContentDisposition(response.headers.get("content-disposition")) ||
+    "downloaded.bin";
+
+  const outPath = resolveOutputPath(args, serverFilename);
+  const buf = Buffer.from(await response.arrayBuffer());
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, buf);
+  console.log(`Saved ${buf.length} bytes -> ${outPath}`);
+}
+
+async function finalizeDownloadResponse(response, { args, downloadUrl }) {
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/json")) {
+    await saveBinaryResponse(response, args, null);
+    return;
+  }
+
+  const data = await response.json().catch(() => null);
+  if (!data || typeof data !== "object") {
+    throw new Error("Unexpected non-download JSON response");
+  }
+
+  if (typeof data.token === "string" && data.token) {
+    const tokenUrl = new URL(downloadUrl);
+    tokenUrl.searchParams.set("token", data.token);
+
+    const r3 = await fetch(tokenUrl.toString(), { method: "GET" });
+    if (!r3.ok) {
+      const text = await responseBodyText(r3);
+      throw new Error(`Download failed ${r3.status}: ${text}`);
+    }
+
+    await saveBinaryResponse(r3, args, data.filename || null);
+    return;
+  }
+
+  if (typeof data.download_url === "string" && data.download_url) {
+    const sameOriginDownload = normalizeSameOriginDownloadUrl(
+      data.download_url,
+      new URL(downloadUrl).origin,
+      downloadUrl,
+    );
+    const r3 = await fetch(sameOriginDownload, { method: "GET" });
+    if (!r3.ok) {
+      const text = await responseBodyText(r3);
+      throw new Error(`Download failed ${r3.status}: ${text}`);
+    }
+    await saveBinaryResponse(r3, args, data.filename || null);
+    return;
+  }
+
+  throw new Error(`Unexpected JSON response from download endpoint: ${JSON.stringify(data)}`);
+}
+
+function maybePrintPaymentReceipt(response) {
+  const paymentResponseHeader =
+    getHeaderCaseInsensitive(response.headers, "PAYMENT-RESPONSE") ||
+    getHeaderCaseInsensitive(response.headers, "X-PAYMENT-RESPONSE");
+  if (!paymentResponseHeader) return;
+
+  try {
+    const receipt = decodePaymentResponseHeader(paymentResponseHeader);
+    const explorer = explorerTxUrl(receipt.network, receipt.transaction);
+    console.log("Payment receipt:");
+    console.log(`- network: ${receipt.network}`);
+    if (receipt.payer) console.log(`- payer:   ${receipt.payer}`);
+    console.log(`- tx:      ${receipt.transaction}`);
+    if (explorer) console.log(`- explorer: ${explorer}`);
+  } catch (err) {
+    console.error(`[buy] warning: could not decode PAYMENT-RESPONSE header (${err.message || String(err)})`);
+  }
 }
 
 async function main() {
@@ -325,23 +380,7 @@ async function main() {
   const inputUrl = args._[0];
   if (!inputUrl) usageAndExit(1);
 
-  let buyerPk;
-  try {
-    buyerPk = resolveBuyerPrivateKey(args);
-  } catch (err) {
-    console.error(err.message || String(err));
-    process.exit(1);
-  }
-
-  let account;
-  try {
-    account = privateKeyToAccount(normalizePrivateKey(buyerPk));
-  } catch {
-    console.error("Invalid buyer private key format.");
-    process.exit(1);
-  }
-  const client = new x402Client();
-  registerExactEvmScheme(client, { signer: account });
+  const downloadCode = resolveDownloadCode(args);
 
   const resolved = await resolveDownloadUrl(inputUrl);
   const downloadUrl = resolved.downloadUrl;
@@ -349,89 +388,74 @@ async function main() {
     console.log(`[buy] resolved purchase endpoint: ${downloadUrl}`);
   }
 
-  // 1) Request: expect 402 with PAYMENT-REQUIRED header.
-  const r1 = resolved.firstProbe?.response || await fetch(downloadUrl, { method: "GET" });
-  if (r1.status !== 402) {
-    const text = await r1.text().catch(() => "");
-    throw new Error(`Expected 402, got ${r1.status}: ${text}`);
-  }
+  const initialHeaders = {};
+  if (downloadCode) initialHeaders[DOWNLOAD_CODE_HEADER] = downloadCode;
 
-  const paymentRequiredHeader =
-    resolved.firstProbe?.paymentRequiredHeader || getHeaderCaseInsensitive(r1.headers, "PAYMENT-REQUIRED");
-  if (!paymentRequiredHeader) throw new Error("Missing PAYMENT-REQUIRED header");
-
-  const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader);
-  const payload = await client.createPaymentPayload(paymentRequired);
-  const paymentHeader = encodePaymentSignatureHeader(payload);
-
-  // 2) Retry with payment signature, expect token JSON.
-  const r2 = await fetch(downloadUrl, {
+  const r1 = await fetch(downloadUrl, {
     method: "GET",
-    headers: {
-      "PAYMENT-SIGNATURE": paymentHeader,
-    },
+    headers: initialHeaders,
   });
 
-  if (!r2.ok) {
-    const text = await r2.text().catch(() => "");
-    throw new Error(`Payment failed ${r2.status}: ${text}`);
+  if (r1.status === 410) {
+    throw new Error(`Sale has ended at ${downloadUrl}`);
   }
 
-  const paymentResponseHeader =
-    getHeaderCaseInsensitive(r2.headers, "PAYMENT-RESPONSE")
-    || getHeaderCaseInsensitive(r2.headers, "X-PAYMENT-RESPONSE");
-  if (paymentResponseHeader) {
+  if (r1.status === 401) {
+    const text = await responseBodyText(r1);
+    throw new Error(
+      `Download code required or invalid (send header ${DOWNLOAD_CODE_HEADER}). ${text}`,
+    );
+  }
+
+  if (r1.status === 402) {
+    const paymentRequiredHeader = getHeaderCaseInsensitive(r1.headers, "PAYMENT-REQUIRED");
+    if (!paymentRequiredHeader) throw new Error("Missing PAYMENT-REQUIRED header");
+
+    let buyerPk;
     try {
-      const receipt = decodePaymentResponseHeader(paymentResponseHeader);
-      const explorer = explorerTxUrl(receipt.network, receipt.transaction);
-      console.log("Payment receipt:");
-      console.log(`- network: ${receipt.network}`);
-      if (receipt.payer) console.log(`- payer:   ${receipt.payer}`);
-      console.log(`- tx:      ${receipt.transaction}`);
-      if (explorer) console.log(`- explorer: ${explorer}`);
+      buyerPk = resolveBuyerPrivateKey(args);
     } catch (err) {
-      console.error(`[buy] warning: could not decode PAYMENT-RESPONSE header (${err.message || String(err)})`);
+      throw new Error(`${err.message || String(err)} (payment required by seller)`);
     }
+
+    let account;
+    try {
+      account = privateKeyToAccount(normalizePrivateKey(buyerPk));
+    } catch {
+      throw new Error("Invalid buyer private key format.");
+    }
+
+    const client = new x402Client();
+    registerExactEvmScheme(client, { signer: account });
+
+    const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader);
+    const payload = await client.createPaymentPayload(paymentRequired);
+    const paymentHeader = encodePaymentSignatureHeader(payload);
+
+    const r2 = await fetch(downloadUrl, {
+      method: "GET",
+      headers: {
+        ...initialHeaders,
+        "PAYMENT-SIGNATURE": paymentHeader,
+      },
+    });
+
+    if (!r2.ok) {
+      const text = await responseBodyText(r2);
+      throw new Error(`Payment failed ${r2.status}: ${text}`);
+    }
+
+    maybePrintPaymentReceipt(r2);
+    await finalizeDownloadResponse(r2, { args, downloadUrl });
+    return;
   }
 
-  const data = await r2.json();
-  const token = data?.token;
-  if (!token) throw new Error(`Missing token in response: ${JSON.stringify(data)}`);
-
-  // Determine download URL for the token step.
-  const base = new URL(downloadUrl);
-  const tokenUrl = new URL(base.toString());
-  tokenUrl.searchParams.set("token", token);
-
-  // 3) Download with token.
-  const r3 = await fetch(tokenUrl.toString(), { method: "GET" });
-  if (!r3.ok) {
-    const text = await r3.text().catch(() => "");
-    throw new Error(`Download failed ${r3.status}: ${text}`);
+  if (!r1.ok) {
+    const text = await responseBodyText(r1);
+    throw new Error(`Download failed ${r1.status}: ${text}`);
   }
 
-  const serverFilename =
-    data?.filename ||
-    filenameFromContentDisposition(r3.headers.get("content-disposition")) ||
-    "downloaded.bin";
-  const safeServerFilename = sanitizeFilename(serverFilename);
-
-  let outPath;
-  if (args.out) {
-    outPath = String(args.out);
-  } else if (args.basename) {
-    const safeBase = sanitizeFilename(args.basename);
-    const ext = path.extname(safeServerFilename) || "";
-    outPath = `./${safeBase}${ext}`;
-  } else {
-    outPath = `./${safeServerFilename}`;
-  }
-
-  const buf = Buffer.from(await r3.arrayBuffer());
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, buf);
-
-  console.log(`Saved ${buf.length} bytes -> ${outPath}`);
+  await finalizeDownloadResponse(r1, { args, downloadUrl });
 }
 
 main().catch((e) => {

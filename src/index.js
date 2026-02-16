@@ -11,6 +11,19 @@ import { x402HTTPResourceServer, HTTPFacilitatorClient } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { isAddress } from "viem";
 import { resolveSupportedChain } from "./chain_meta.js";
+import {
+  ACCESS_MODE_VALUES,
+  DEFAULT_ACCESS_MODE,
+  accessModeRequiresDownloadCode,
+  accessModeRequiresPayment,
+  accessModeSummary,
+  isValidAccessMode,
+} from "./access_mode.js";
+import {
+  DOWNLOAD_CODE_HEADER,
+  isValidDownloadCodeHash,
+  verifyDownloadCode,
+} from "./download_code.js";
 
 dotenv.config();
 
@@ -87,6 +100,10 @@ const SELLER_PAY_TO = String(
   process.env.SELLER_PAY_TO || process.env.PAY_TO || "",
 ).trim();
 const PRICE_USD = process.env.PRICE_USD || "1.00";
+const ACCESS_MODE = String(
+  process.env.ACCESS_MODE || DEFAULT_ACCESS_MODE,
+).trim().toLowerCase();
+const DOWNLOAD_CODE_HASH = String(process.env.DOWNLOAD_CODE_HASH || "").trim();
 const RAW_CHAIN_ID =
   process.env.CHAIN_ID || process.env.NETWORK || "eip155:84532";
 const ARTIFACT_PATH = process.env.ARTIFACT_PATH || process.env.PROTECTED_FILE;
@@ -117,7 +134,7 @@ const OG_IMAGE_WIDTH = 1200;
 const OG_IMAGE_HEIGHT = 630;
 const SKILL_NAME = "leak-buy";
 const SKILL_DESCRIPTION =
-  "Buy and download x402-gated leak content from promo or download links using the leak CLI tool";
+  "Buy and download leak content from promo or download links using the leak CLI tool";
 const SKILL_SOURCE = "clawhub";
 const SKILL_INSTALL_COMMAND = "clawhub install leak-buy";
 const WELL_KNOWN_CACHE_CONTROL = "public, max-age=60";
@@ -134,6 +151,30 @@ const ENDED_WINDOW_SECONDS = parseNonNegativeInt(
   0,
 );
 
+if (!isValidAccessMode(ACCESS_MODE)) {
+  console.error(`Invalid ACCESS_MODE: ${ACCESS_MODE}`);
+  console.error(`Supported ACCESS_MODE values: ${ACCESS_MODE_VALUES.join(", ")}`);
+  process.exit(1);
+}
+
+const REQUIRES_DOWNLOAD_CODE = accessModeRequiresDownloadCode(ACCESS_MODE);
+const REQUIRES_PAYMENT = accessModeRequiresPayment(ACCESS_MODE);
+
+if (REQUIRES_DOWNLOAD_CODE && !DOWNLOAD_CODE_HASH) {
+  console.error(`ACCESS_MODE=${ACCESS_MODE} requires DOWNLOAD_CODE_HASH.`);
+  process.exit(1);
+}
+if (DOWNLOAD_CODE_HASH && !isValidDownloadCodeHash(DOWNLOAD_CODE_HASH)) {
+  console.error("Invalid DOWNLOAD_CODE_HASH format.");
+  process.exit(1);
+}
+if (!REQUIRES_DOWNLOAD_CODE && DOWNLOAD_CODE_HASH) {
+  console.error(
+    `ACCESS_MODE=${ACCESS_MODE} does not use DOWNLOAD_CODE_HASH. Remove DOWNLOAD_CODE_HASH or choose a download-code access mode.`,
+  );
+  process.exit(1);
+}
+
 let CHAIN_META;
 try {
   CHAIN_META = resolveSupportedChain(RAW_CHAIN_ID);
@@ -147,39 +188,41 @@ const CHAIN_NAME = CHAIN_META.name;
 const CHAIN_NUMERIC_ID = CHAIN_META.id;
 const IS_BASE_MAINNET = CHAIN_NUMERIC_ID === 8453;
 
-if (!new Set(["testnet", "cdp_mainnet"]).has(FACILITATOR_MODE)) {
-  console.error(
-    "Invalid FACILITATOR_MODE. Supported values: testnet, cdp_mainnet",
-  );
-  process.exit(1);
+if (REQUIRES_PAYMENT) {
+  if (!new Set(["testnet", "cdp_mainnet"]).has(FACILITATOR_MODE)) {
+    console.error(
+      "Invalid FACILITATOR_MODE. Supported values: testnet, cdp_mainnet",
+    );
+    process.exit(1);
+  }
+
+  if (IS_BASE_MAINNET && FACILITATOR_MODE !== "cdp_mainnet") {
+    console.error(
+      "Invalid config: CHAIN_ID=eip155:8453 requires FACILITATOR_MODE=cdp_mainnet.",
+    );
+    console.error(
+      "Set FACILITATOR_MODE=cdp_mainnet and configure CDP_API_KEY_ID/CDP_API_KEY_SECRET.",
+    );
+    process.exit(1);
+  }
+
+  if (
+    FACILITATOR_MODE === "cdp_mainnet" &&
+    (!CDP_API_KEY_ID || !CDP_API_KEY_SECRET)
+  ) {
+    console.error("Missing CDP credentials for FACILITATOR_MODE=cdp_mainnet.");
+    console.error(
+      "Set CDP_API_KEY_ID and CDP_API_KEY_SECRET in your environment.",
+    );
+    process.exit(1);
+  }
 }
 
-if (IS_BASE_MAINNET && FACILITATOR_MODE !== "cdp_mainnet") {
-  console.error(
-    "Invalid config: CHAIN_ID=eip155:8453 requires FACILITATOR_MODE=cdp_mainnet.",
-  );
-  console.error(
-    "Set FACILITATOR_MODE=cdp_mainnet and configure CDP_API_KEY_ID/CDP_API_KEY_SECRET.",
-  );
-  process.exit(1);
-}
-
-if (
-  FACILITATOR_MODE === "cdp_mainnet" &&
-  (!CDP_API_KEY_ID || !CDP_API_KEY_SECRET)
-) {
-  console.error("Missing CDP credentials for FACILITATOR_MODE=cdp_mainnet.");
-  console.error(
-    "Set CDP_API_KEY_ID and CDP_API_KEY_SECRET in your environment.",
-  );
-  process.exit(1);
-}
-
-if (!SELLER_PAY_TO) {
+if (REQUIRES_PAYMENT && !SELLER_PAY_TO) {
   console.error("Missing required env var: SELLER_PAY_TO (or PAY_TO)");
   process.exit(1);
 }
-if (!isAddress(SELLER_PAY_TO)) {
+if (SELLER_PAY_TO && !isAddress(SELLER_PAY_TO)) {
   console.error(`Invalid SELLER_PAY_TO (or PAY_TO): ${SELLER_PAY_TO}`);
   console.error("Expected a valid Ethereum address (0x + 40 hex chars).");
   process.exit(1);
@@ -405,6 +448,10 @@ function promoModel(req) {
     saleEndTs: SALE_END_TS,
     endedWindowSeconds: ENDED_WINDOW_SECONDS,
     endedWindowCutoffTs: endedWindowCutoffTs(),
+    accessMode: ACCESS_MODE,
+    accessSummary: accessModeSummary(ACCESS_MODE),
+    requiresPayment: REQUIRES_PAYMENT,
+    requiresDownloadCode: REQUIRES_DOWNLOAD_CODE,
   };
 }
 
@@ -428,11 +475,24 @@ function buildDiscoveryResource(req) {
     price_currency: "USDC",
     network: CHAIN_ID,
     sale_end: new Date(SALE_END_TS * 1000).toISOString(),
+    access_mode: ACCESS_MODE,
+    access_summary: accessModeSummary(ACCESS_MODE),
+    payment_required: REQUIRES_PAYMENT,
+    download_code_required: REQUIRES_DOWNLOAD_CODE,
+    download_code_header: DOWNLOAD_CODE_HEADER,
   };
 }
 
 function renderWellKnownSkillMd(req) {
   const resource = buildDiscoveryResource(req);
+  const codeNote = resource.download_code_required
+    ? `- Download code header: ${resource.download_code_header}`
+    : "- Download code: not required";
+  const paymentFlow = resource.payment_required
+    ? `2. Use \`download_url\` for x402 purchase and token mint.
+3. Download from \`/download?token=...\` and save locally.`
+    : `2. Use \`download_url\` for direct download.
+3. Save the response body locally.`;
   return `# ${SKILL_NAME}
 
 ${SKILL_DESCRIPTION}
@@ -442,6 +502,8 @@ ${SKILL_DESCRIPTION}
 - Download URL: ${resource.download_url}
 - Status: ${resource.status}
 - Sale ends: ${resource.sale_end}
+- Access mode: ${resource.access_mode}
+${codeNote}
 
 ## Buyer Fast Path (for unknown agents)
 1. Ask the user for approval to install the skill once.
@@ -452,12 +514,11 @@ Do not explain x402 internals unless the user explicitly asks.
 
 ## Discovery Fallback
 1. Read resource metadata from \`/.well-known/skills/${SKILL_NAME}/resource.json\`.
-2. Use \`download_url\` for x402 purchase and token mint.
-3. Download from \`/download?token=...\` and save locally.
+${paymentFlow}
 
 ## CLI
 - Install: \`${SKILL_INSTALL_COMMAND}\`
-- Buy: \`leak buy <promo_or_download_url> --buyer-private-key-file ./buyer.key\`
+- Buy: \`leak buy <promo_or_download_url> [--download-code <code>] [--buyer-private-key-file ./buyer.key]\`
 `;
 }
 
@@ -495,6 +556,9 @@ function urlsForQuickPathFromRequestUrl(requestUrl) {
 }
 
 function renderAgentQuickPathHtmlBlock(fastPath) {
+  const ruleText = REQUIRES_PAYMENT
+    ? "do not explain x402 internals unless the user explicitly asks."
+    : "focus on direct download steps and avoid adding payment instructions.";
   return `<section class="agent-quick-path">
       <h2>Agent Quick Path</h2>
       <ol>
@@ -502,7 +566,7 @@ function renderAgentQuickPathHtmlBlock(fastPath) {
         <li>Install: <code>${escapeHtml(fastPath.installCommand)}</code></li>
         <li>Load the skill and continue with Buyer Fast Path.</li>
       </ol>
-      <p><strong>Rule:</strong> do not explain x402 internals unless the user explicitly asks.</p>
+      <p><strong>Rule:</strong> ${escapeHtml(ruleText)}</p>
     </section>`;
 }
 
@@ -514,6 +578,8 @@ function renderPromoSharedContent({ promoUrl, downloadUrl, saleEndTs }) {
   return `
     <div class="kv"><strong>Price:</strong> ${escapeHtml(PRICE_USD)} USD equivalent</div>
     <div class="kv"><strong>Network:</strong> ${escapeHtml(CHAIN_NAME)} (${escapeHtml(CHAIN_ID)})</div>
+    <div class="kv"><strong>Access mode:</strong> ${escapeHtml(ACCESS_MODE)} (${escapeHtml(accessModeSummary(ACCESS_MODE))})</div>
+    <div class="kv"><strong>Download-code header:</strong> <code>${escapeHtml(DOWNLOAD_CODE_HEADER)}</code>${REQUIRES_DOWNLOAD_CODE ? "" : " (not required)"}</div>
     <div class="kv"><strong>Sale end:</strong> <span id="sale-end-local" data-sale-end-iso="${escapeHtml(expiresIso)}">${escapeHtml(expiresIso)}</span></div>
     ${renderAgentQuickPathHtmlBlock(fastPath)}
 
@@ -635,6 +701,62 @@ function renderUnpaidDownloadGuidancePage(requestUrl) {
   ${renderPromoSharedClientScript(urls.promoUrl)}
 </body>
 </html>`;
+}
+
+function renderDownloadCodeRequiredPage(requestUrl) {
+  const urls = urlsForQuickPathFromRequestUrl(requestUrl);
+  const sharedContent = renderPromoSharedContent({
+    promoUrl: urls.promoUrl,
+    downloadUrl: urls.downloadUrl,
+    saleEndTs: SALE_END_TS,
+  });
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Download Code Required - leak</title>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 24px; background: #f7f7f5; color: #1f1f1f; }
+    .card { max-width: 760px; margin: 0 auto; border: 1px solid #d8d8d0; background: #fff; border-radius: 10px; padding: 20px; }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    p { line-height: 1.5; }
+    .kv { margin: 14px 0; font-size: 14px; color: #333; }
+    code, pre { background: #f0f0eb; border-radius: 6px; padding: 2px 6px; }
+    pre { padding: 10px; overflow-x: auto; }
+    .install-note { margin-top: 16px; font-size: 13px; color: #2f2f2f; }
+    .install-note a { color: #1f1f1f; }
+    .agent-quick-path { margin: 16px 0; padding: 14px; border: 1px solid #d8d8d0; border-radius: 8px; background: #fafaf6; }
+    .agent-quick-path h2 { margin: 0 0 8px; font-size: 18px; }
+    .agent-quick-path ol { margin: 8px 0 8px 20px; }
+    .agent-quick-path p { margin: 8px 0 0; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>401 Download Code Required</h1>
+    <p>This URL requires a download code before access is granted.</p>
+    <div class="kv"><strong>Header:</strong> <code>${escapeHtml(DOWNLOAD_CODE_HEADER)}</code></div>
+    <div class="kv"><strong>Resource:</strong> ${escapeHtml(ARTIFACT_NAME)}</div>
+    ${sharedContent}
+  </main>
+  ${renderPromoSharedClientScript(urls.promoUrl)}
+</body>
+</html>`;
+}
+
+function sendDownloadCodeRequired(req, res, requestUrl) {
+  res.setHeader("X-LEAK-DOWNLOAD-CODE-REQUIRED", "1");
+  const wantsHtml = (req.get("accept") || "").includes("text/html");
+  const isBrowser = (req.get("user-agent") || "").includes("Mozilla");
+  if (wantsHtml && isBrowser) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.status(401).send(renderDownloadCodeRequiredPage(requestUrl));
+  }
+  return res.status(401).json({
+    error: "download code required",
+    header: DOWNLOAD_CODE_HEADER,
+  });
 }
 
 function sendSkillIndex(req, res) {
@@ -874,59 +996,76 @@ function validateAndConsumeToken(token) {
   return { ok: true };
 }
 
+function sendArtifactStream(res) {
+  const p = absArtifactPath();
+  if (!fs.existsSync(p)) {
+    return res.status(404).json({ error: "artifact not found" });
+  }
+
+  res.setHeader("Content-Type", MIME_TYPE);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=\"${path.basename(p)}\"`,
+  );
+  return fs.createReadStream(p).pipe(res);
+}
+
 const app = express();
 app.set("trust proxy", true);
 
 // x402 core server + HTTP wrapper
-await preflightCdpAuth();
-const facilitatorConfig = { url: FACILITATOR_URL };
-if (FACILITATOR_MODE === "cdp_mainnet") {
-  facilitatorConfig.createAuthHeaders = createCdpAuthHeadersFactory();
-}
-const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfig);
-const coreServer = new x402ResourceServer(facilitatorClient).register(
-  CHAIN_ID,
-  new ExactEvmScheme(),
-);
-
-// Route config for x402HTTPResourceServer
-const routes = {
-  "GET /download": {
-    accepts: [
-      {
-        scheme: "exact",
-        price: `$${PRICE_USD}`,
-        network: CHAIN_ID,
-        payTo: SELLER_PAY_TO,
-        maxTimeoutSeconds: WINDOW_SECONDS,
-      },
-    ],
-    description: ARTIFACT_NAME,
-    mimeType: MIME_TYPE,
-    unpaidResponseBody: async (context) => ({
-      contentType: "text/html; charset=utf-8",
-      body: renderUnpaidDownloadGuidancePage(context?.adapter?.getUrl?.()),
-    }),
-  },
-};
-
-const httpServer = new x402HTTPResourceServer(coreServer, routes);
-try {
-  await httpServer.initialize();
-} catch (err) {
-  console.error("[startup] Failed to initialize x402 route configuration.");
-  console.error(
-    `[startup] facilitator=${FACILITATOR_URL} mode=${FACILITATOR_MODE} network=${CHAIN_ID}`,
-  );
-  if (Array.isArray(err?.errors) && err.errors.length > 0) {
-    for (const e of err.errors) {
-      console.error(`[startup] ${e.message || JSON.stringify(e)}`);
-    }
-  } else {
-    console.error(`[startup] ${err?.message || String(err)}`);
+let httpServer = null;
+if (REQUIRES_PAYMENT) {
+  await preflightCdpAuth();
+  const facilitatorConfig = { url: FACILITATOR_URL };
+  if (FACILITATOR_MODE === "cdp_mainnet") {
+    facilitatorConfig.createAuthHeaders = createCdpAuthHeadersFactory();
   }
-  printFacilitatorHint(err);
-  process.exit(1);
+  const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfig);
+  const coreServer = new x402ResourceServer(facilitatorClient).register(
+    CHAIN_ID,
+    new ExactEvmScheme(),
+  );
+
+  // Route config for x402HTTPResourceServer
+  const routes = {
+    "GET /download": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: `$${PRICE_USD}`,
+          network: CHAIN_ID,
+          payTo: SELLER_PAY_TO,
+          maxTimeoutSeconds: WINDOW_SECONDS,
+        },
+      ],
+      description: ARTIFACT_NAME,
+      mimeType: MIME_TYPE,
+      unpaidResponseBody: async (context) => ({
+        contentType: "text/html; charset=utf-8",
+        body: renderUnpaidDownloadGuidancePage(context?.adapter?.getUrl?.()),
+      }),
+    },
+  };
+
+  httpServer = new x402HTTPResourceServer(coreServer, routes);
+  try {
+    await httpServer.initialize();
+  } catch (err) {
+    console.error("[startup] Failed to initialize x402 route configuration.");
+    console.error(
+      `[startup] facilitator=${FACILITATOR_URL} mode=${FACILITATOR_MODE} network=${CHAIN_ID}`,
+    );
+    if (Array.isArray(err?.errors) && err.errors.length > 0) {
+      for (const e of err.errors) {
+        console.error(`[startup] ${e.message || JSON.stringify(e)}`);
+      }
+    } else {
+      console.error(`[startup] ${err?.message || String(err)}`);
+    }
+    printFacilitatorHint(err);
+    process.exit(1);
+  }
 }
 
 setInterval(() => {
@@ -947,12 +1086,17 @@ app.get("/info", (req, res) => {
     artifact: path.basename(absArtifactPath()),
     price_usd: PRICE_USD,
     network: CHAIN_ID,
-    pay_to: SELLER_PAY_TO,
+    pay_to: SELLER_PAY_TO || null,
     window_seconds: WINDOW_SECONDS,
     confirmation_policy: CONFIRMATION_POLICY,
     confirmations_required: CONFIRMATIONS_REQUIRED,
     facilitator_url: FACILITATOR_URL,
     facilitator_mode: FACILITATOR_MODE,
+    access_mode: ACCESS_MODE,
+    access_summary: accessModeSummary(ACCESS_MODE),
+    payment_required: REQUIRES_PAYMENT,
+    download_code_required: REQUIRES_DOWNLOAD_CODE,
+    download_code_header: DOWNLOAD_CODE_HEADER,
     download_url: model.downloadUrl,
     promo_url: model.promoUrl,
   });
@@ -1095,13 +1239,18 @@ app.get("/.well-known/leak", (req, res) => {
       install_command: SKILL_INSTALL_COMMAND,
     },
     resource: {
-      type: "x402-gated-download",
+      type: REQUIRES_PAYMENT ? "x402-gated-download" : "direct-download",
       download_url: model.downloadUrl,
       promo_url: model.promoUrl,
       artifact_name: ARTIFACT_NAME,
       price_usd: PRICE_USD,
       price_currency: "USDC",
       network: CHAIN_ID,
+      access_mode: ACCESS_MODE,
+      access_summary: accessModeSummary(ACCESS_MODE),
+      payment_required: REQUIRES_PAYMENT,
+      download_code_required: REQUIRES_DOWNLOAD_CODE,
+      download_code_header: DOWNLOAD_CODE_HEADER,
       sale_end: new Date(SALE_END_TS * 1000).toISOString(),
     },
     deprecation: LEGACY_DISCOVERY_DEPRECATION,
@@ -1110,7 +1259,7 @@ app.get("/.well-known/leak", (req, res) => {
   });
 });
 
-// x402 gate for GET /download (supports PAYMENT-SIGNATURE and legacy X-PAYMENT by aliasing)
+// Access gate for GET /download (download-code check, then optional x402 payment).
 app.use("/download", async (req, res, next) => {
   if (saleEnded()) {
     return res.status(410).json({ error: "leak ended" });
@@ -1122,10 +1271,30 @@ app.use("/download", async (req, res, next) => {
     return next();
   }
 
+  const requestUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+
+  if (REQUIRES_DOWNLOAD_CODE) {
+    const submittedCode = String(req.get(DOWNLOAD_CODE_HEADER) || "").trim();
+    if (!submittedCode) return sendDownloadCodeRequired(req, res, requestUrl);
+
+    let valid = false;
+    try {
+      valid = await verifyDownloadCode(submittedCode, DOWNLOAD_CODE_HASH);
+    } catch (err) {
+      console.error(
+        `[download-code] verification failed: ${err?.message || String(err)}`,
+      );
+      return res.status(500).json({ error: "download code validation failed" });
+    }
+
+    if (!valid) return sendDownloadCodeRequired(req, res, requestUrl);
+  }
+
+  if (!REQUIRES_PAYMENT) return next();
+
   // NOTE: because this middleware is mounted at "/download", Express strips the mount
   // path and `req.path` becomes "/". x402 route matching needs the *full* path.
   const fullPath = `${req.baseUrl || ""}${req.path || ""}`;
-  const requestUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
 
   const adapter = {
     getHeader(name) {
@@ -1216,20 +1385,15 @@ app.get("/download", async (req, res) => {
   if (token) {
     const check = validateAndConsumeToken(token);
     if (!check.ok) return res.status(403).json({ error: check.reason });
-
-    const p = absArtifactPath();
-    if (!fs.existsSync(p))
-      return res.status(404).json({ error: "artifact not found" });
-
-    res.setHeader("Content-Type", MIME_TYPE);
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=\"${path.basename(p)}\"`,
-    );
-    return fs.createReadStream(p).pipe(res);
+    return sendArtifactStream(res);
   }
 
-  // 2) No token: if we got here, payment has been verified by the middleware.
+  // 2) No token.
+  if (!REQUIRES_PAYMENT) {
+    return sendArtifactStream(res);
+  }
+
+  // If we got here with payment enabled, payment has been verified by middleware.
   // If you want immediate UX, just mint token. If you want stronger guarantees, settle.
   if (CONFIRMATION_POLICY === "confirmed") {
     let settle;
@@ -1278,13 +1442,25 @@ app.get("/download", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`x402-node listening on http://localhost:${PORT}`);
-  console.log(`facilitator mode: ${FACILITATOR_MODE}`);
-  console.log(`facilitator url:  ${FACILITATOR_URL}`);
+  console.log(`access mode:      ${ACCESS_MODE} (${accessModeSummary(ACCESS_MODE)})`);
+  if (REQUIRES_PAYMENT) {
+    console.log(`facilitator mode: ${FACILITATOR_MODE}`);
+    console.log(`facilitator url:  ${FACILITATOR_URL}`);
+  }
   console.log(`network:          ${CHAIN_ID}`);
+  if (REQUIRES_DOWNLOAD_CODE) {
+    console.log(`download-code:    required via header ${DOWNLOAD_CODE_HEADER}`);
+  }
   console.log(`promo:   http://localhost:${PORT}/ (share this)`);
   console.log(`info:    http://localhost:${PORT}/info`);
   console.log(`health:  http://localhost:${PORT}/health`);
-  console.log(`download http://localhost:${PORT}/download (x402 protected)`);
+  const protection = [
+    REQUIRES_DOWNLOAD_CODE ? "download-code" : null,
+    REQUIRES_PAYMENT ? "x402 payment" : null,
+  ].filter(Boolean);
+  console.log(
+    `download http://localhost:${PORT}/download (${protection.length > 0 ? protection.join(" + ") : "direct"})`,
+  );
   if (endedWindowActive()) {
     console.log(
       `ended-window active until ${new Date(endedWindowCutoffTs() * 1000).toISOString()} (download endpoints HTTP 410 mode)`,

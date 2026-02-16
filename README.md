@@ -41,7 +41,7 @@ leak --file ./your-file.bin --public
 **Buying**:
 
 ```bash
-leak buy <promo_or_download_link> --buyer-private-key-file <path>
+leak buy <promo_or_download_link> [--download-code <code>] [--buyer-private-key-file <path>]
 ```
 
 ### Seller Quickstart 1: Local testnet sale (fastest path)
@@ -92,9 +92,18 @@ Use the direct CLI buy flow:
 leak buy "https://xxxx.trycloudflare.com/" --buyer-private-key-file ./buyer.key
 ```
 
-`leak buy` accepts either the promo URL (`/`) or direct x402 URL (`/download`).
+For download-code modes, add:
+
+```bash
+leak buy "https://xxxx.trycloudflare.com/" --download-code "friends-only"
+```
+
+`leak buy` accepts either the promo URL (`/`) or direct `/download` URL.
 By default, the file is saved to your current directory using the server-provided filename; use `--out` or `--basename` to control naming.
 When settlement metadata is returned, `leak buy` also prints a receipt block with network + transaction hash (and Basescan link on Base networks).
+
+If the sale access mode includes payment, pass a buyer key (`--buyer-private-key-file` or `--buyer-private-key-stdin`).
+If the sale access mode includes download-code, pass `--download-code <code>` (or `--download-code-stdin`).
 
 Security note: use a dedicated buyer key with limited funds.
 
@@ -109,8 +118,9 @@ The hardened skills require a preinstalled `leak` binary on PATH.
 
 Recommended first-time agent UX for unknown URLs:
 - ask only for skill-install approval (`clawhub install leak-buy`)
-- ask for an existing buyer key file path
-- run: `bash skills/leak-buy/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file <buyer_key_file_path>`
+- ask for an existing buyer key file path when payment is required
+- ask for download code when download-code is required
+- run: `bash skills/leak-buy/scripts/buy.sh "<promo_or_download_url>" --buyer-private-key-file <buyer_key_file_path>` (append `--download-code <code>` when needed)
 - avoid protocol deep-dives unless the user explicitly asks for x402 internals
 
 ### Next: Mainnet checklist (optional)
@@ -175,6 +185,13 @@ It will ask:
 - **How long?** (e.g. `15m`, `1h`)
 
 Optional flags:
+- `--access-mode <mode>` where mode is one of:
+  - `no-download-code-no-payment`
+  - `download-code-only-no-payment`
+  - `payment-only-no-download-code` (default)
+  - `download-code-and-payment`
+- `--download-code "friends-only"` (required for download-code modes)
+- `--download-code-stdin` (read download code from stdin)
 - `--price 0.01` (USDC)
 - `--window 1h` (or seconds)
 - `--confirmed` (settle on-chain before issuing token)
@@ -184,7 +201,7 @@ Optional flags:
 - `--og-image-url https://...` (absolute `http(s)` URL) or `--og-image-url ./cover.png` (local image path)
 - `--ended-window-seconds 86400` (keep ended promo page online before auto-stop)
 - `--network eip155:84532`
-- `--pay-to 0x...` (must be a valid Ethereum address)
+- `--pay-to 0x...` (required only for payment modes; must be a valid Ethereum address)
 - `--port 4021`
 
 ### Persistent config (`leak config`)
@@ -257,11 +274,15 @@ npm run leak -- --file ./song.mp3 --pay-to 0x... --price 1 --window 1h --public 
 When a local image path is used for `--og-image-url`, leak serves it from `/og-image` and points OG/Twitter metadata at that endpoint.
 Without `--og-image-url`, leak serves a generated raster OG card from `/og.png` (and keeps `/og.svg` for debug/backward compatibility).
 
-This mirrors the behavior of the original Python scaffold implementation:
+Payment-mode behavior (`payment-only-no-download-code` / `download-code-and-payment`):
 
 - `GET /download` without payment → **402** with `PAYMENT-REQUIRED` header
 - `GET /download` with valid payment headers → returns a **time-limited token** JSON
 - `GET /download?token=...` → streams the artifact
+
+Download-code behavior (`download-code-*` modes):
+- send `X-LEAK-DOWNLOAD-CODE: <code>` on `GET /download`
+- missing/invalid code returns **401**
 
 ### Testnet vs Mainnet facilitator setup
 
@@ -336,7 +357,7 @@ Server will print:
 - `http://localhost:4021/` (promo page)
 - `http://localhost:4021/info` (machine-readable info)
 - `http://localhost:4021/health`
-- `http://localhost:4021/download` (x402-protected)
+- `http://localhost:4021/download` (protection depends on `ACCESS_MODE`)
 
 ---
 
@@ -348,7 +369,10 @@ Server will print:
 curl -i http://localhost:4021/download
 ```
 
-You should get `402` and a `PAYMENT-REQUIRED` header.
+You should get mode-specific behavior:
+- payment mode: `402` + `PAYMENT-REQUIRED`
+- download-code mode without header: `401`
+- no-payment/no-download-code mode: direct file response
 
 ### B) Paid request → token
 
@@ -406,10 +430,10 @@ export LEAK_DEV=1   # allows BASE_URL to default to http://127.0.0.1:4021
 ```
 
 What it does:
-- first `GET /download` expects **402** + `PAYMENT-REQUIRED`
-- creates a payment payload, retries with `PAYMENT-SIGNATURE`
-- receives `{ token, download_url, filename, mime_type }`
-- downloads via `?token=` and saves to disk
+- if payment is required, first `GET /download` gets **402** + `PAYMENT-REQUIRED`
+- if download-code is required, sends `X-LEAK-DOWNLOAD-CODE`
+- handles payment/token flow when required
+- saves the downloaded artifact
 
 ### C) Use token → download
 
@@ -425,16 +449,16 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
   - `200` while sale is active
   - `200` once sale has ended (ended state is shown in page content/metadata)
 - `GET|HEAD /.well-known/skills/index.json` RFC skill discovery index
-- `GET|HEAD /.well-known/skills/leak/SKILL.md` RFC skill metadata markdown
-- `GET|HEAD /.well-known/skills/leak/resource.json` RFC sale/resource metadata (`200` live, `410` ended)
+- `GET|HEAD /.well-known/skills/leak-buy/SKILL.md` RFC skill metadata markdown
+- `GET|HEAD /.well-known/skills/leak-buy/resource.json` RFC sale/resource metadata (`200` live, `410` ended)
 - `GET /.well-known/leak` legacy discovery endpoint (backward-compatible)
 - `GET /info` machine-readable JSON status (compat endpoint)
 - `GET|HEAD /og-image` configured OG image file (when using local `--og-image-url` path)
 - `GET|HEAD /og.png` generated default OG image (used when `--og-image-url` is not set)
 - `GET|HEAD /og.svg` debug/backward-compatible OG SVG
 - `GET /health` free health check
-- `GET /download` x402-protected download endpoint
-  - active sale: normal x402/token flow
+- `GET /download` access-controlled download endpoint
+  - active sale: behavior depends on `ACCESS_MODE`
   - ended sale: `410`
 
 ---
@@ -455,8 +479,14 @@ curl -L -o out.bin "http://localhost:4021/download?token=..."
 - `FACILITATOR_URL`
   - default with `FACILITATOR_MODE=testnet`: `https://x402.org/facilitator`
   - default with `FACILITATOR_MODE=cdp_mainnet`: `https://api.cdp.coinbase.com/platform/v2/x402`
-- `SELLER_PAY_TO` receiving address (valid Ethereum address, `0x` + 40 hex chars)
+- `SELLER_PAY_TO` receiving address (required only for payment modes; valid Ethereum address, `0x` + 40 hex chars)
 - `PRICE_USD` (string like `1.00`)
+- `ACCESS_MODE`:
+  - `no-download-code-no-payment`
+  - `download-code-only-no-payment`
+  - `payment-only-no-download-code` (default)
+  - `download-code-and-payment`
+- `DOWNLOAD_CODE_HASH` (required for download-code modes; hash only, not raw code)
 - `CHAIN_ID`
   - default: `eip155:84532` (Base Sepolia) for `x402.org/facilitator`
   - Base mainnet: `eip155:8453` (requires `FACILITATOR_MODE=cdp_mainnet` plus CDP keys)

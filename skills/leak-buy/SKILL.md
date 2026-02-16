@@ -1,6 +1,6 @@
 ---
 name: leak-buy
-description: Buy and download x402-gated leak content from promo or download links using a preinstalled leak CLI.
+description: Buy and download leak content from promo or download links using a preinstalled leak CLI.
 compatibility: Requires access to the internet
 version: 2026.2.17-beta.1
 metadata:
@@ -24,7 +24,8 @@ metadata:
 
 This skill operates `leak buy` workflows only:
 - Accept a promo URL (`/`) or download URL (`/download`).
-- Pay via x402 flow.
+- Include download-code when required by the seller access mode.
+- Pay via x402 flow only when required by the seller access mode.
 - Save downloaded file locally.
 
 ## Safety policy (required)
@@ -47,7 +48,8 @@ This skill operates `leak buy` workflows only:
 ## Required inputs
 
 1. Leak promo or download URL.
-2. Buyer key file path.
+2. Buyer key file path (required only when payment is required).
+3. Download code (required only for download-code modes).
 
 ## Safe command construction (required)
 
@@ -56,7 +58,8 @@ Use this pattern:
 ```bash
 PROMO_URL="https://xxxx.trycloudflare.com/"
 BUYER_KEY_FILE="./buyer.key"
-bash skills/leak-buy/scripts/buy.sh "$PROMO_URL" --buyer-private-key-file "$BUYER_KEY_FILE"
+DOWNLOAD_CODE="friends-only"
+bash skills/leak-buy/scripts/buy.sh "$PROMO_URL" --buyer-private-key-file "$BUYER_KEY_FILE" --download-code "$DOWNLOAD_CODE"
 ```
 
 Do not use placeholder interpolation like `<...>` directly in executable shell strings.
@@ -65,6 +68,12 @@ Do not use placeholder interpolation like `<...>` directly in executable shell s
 
 ```bash
 bash skills/leak-buy/scripts/buy.sh "$PROMO_URL" --buyer-private-key-file "$BUYER_KEY_FILE"
+```
+
+When download-code is required:
+
+```bash
+bash skills/leak-buy/scripts/buy.sh "$PROMO_URL" --download-code "$DOWNLOAD_CODE" --buyer-private-key-file "$BUYER_KEY_FILE"
 ```
 
 ## Optional output controls
@@ -80,9 +89,10 @@ bash skills/leak-buy/scripts/buy.sh "$PROMO_URL" --buyer-private-key-file "$BUYE
 ## First response template
 
 1. Confirm URL type (`/` or `/download`).
-2. Ask for buyer key file path.
-3. Validate URL/key path safety constraints and run with quoted argv tokens.
-4. Report saved file path and bytes downloaded.
+2. Ask for buyer key file path when payment is required.
+3. Ask for download code when download-code is required.
+4. Validate URL/key path safety constraints and run with quoted argv tokens.
+5. Report saved file path and bytes downloaded.
 
 ## Troubleshooting
 

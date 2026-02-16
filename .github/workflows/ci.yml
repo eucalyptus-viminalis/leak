@@ -31,6 +31,9 @@ jobs:
       - name: Skill security checks
         run: npm run check:skill-security
 
+      - name: Download-code terminology check
+        run: npm run check:download-code-terminology
+
       - name: Syntax checks
         run: npm run check:syntax
 

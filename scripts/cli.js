@@ -30,14 +30,15 @@ function runSubcommand(scriptName, argv) {
 
 if (!sub || sub === "--help" || sub === "-h") {
   console.log("Usage:");
-  console.log("  leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]");
-  console.log("  leak buy <promo_or_download_url> (--buyer-private-key-file <path> | --buyer-private-key-stdin) [--out <path> | --basename <name>]");
+  console.log("  leak --file <path> [--access-mode <mode>] [--download-code <code> | --download-code-stdin] [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]");
+  console.log("  leak buy <promo_or_download_url> [--download-code <code> | --download-code-stdin] [--buyer-private-key-file <path> | --buyer-private-key-stdin] [--out <path> | --basename <name>]");
   console.log("  leak config");
   console.log("  leak config show");
   console.log("  leak config --write-env");
   console.log("");
   console.log("Notes:");
   console.log("  share / as promo (social card); buy can start from / or /download.");
+  console.log("  buyer private key is required only when the seller access mode includes payment.");
   console.log("Backward-compatible:");
   console.log("  leak leak --file <path> ...");
   process.exit(0);

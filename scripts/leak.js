@@ -9,6 +9,17 @@ import { spawn, spawnSync } from "node:child_process";
 import { isAddress } from "viem";
 import { defaultFacilitatorUrlForMode, readConfig } from "./config_store.js";
 import { resolveSupportedChain } from "../src/chain_meta.js";
+import {
+  ACCESS_MODE_VALUES,
+  DEFAULT_ACCESS_MODE,
+  accessModeRequiresDownloadCode,
+  accessModeRequiresPayment,
+  isValidAccessMode,
+} from "../src/access_mode.js";
+import {
+  hashDownloadCode,
+  isValidDownloadCodeHash,
+} from "../src/download_code.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,14 +29,15 @@ const ABSOLUTE_SENSITIVE_PATHS = ["/etc", "/proc", "/sys", "/var/run/secrets"];
 
 function usageAndExit(code = 1, hint = "") {
   if (hint) console.error(`Hint: ${hint}\n`);
-  console.log(`Usage: leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
-  console.log(`       leak leak --file <path> [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
+  console.log(`Usage: leak --file <path> [--access-mode <${ACCESS_MODE_VALUES.join("|")}>] [--download-code <code> | --download-code-stdin] [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
+  console.log(`       leak leak --file <path> [--access-mode <${ACCESS_MODE_VALUES.join("|")}>] [--download-code <code> | --download-code-stdin] [--price <usdc>] [--window <duration>] [--pay-to <address>] [--network <caip2>] [--port <port>] [--confirmed] [--public] [--public-confirm ${PUBLIC_CONFIRM_PHRASE}] [--allow-sensitive-path --acknowledge-sensitive-path-risk] [--og-title <text>] [--og-description <text>] [--og-image-url <https://...|./image.png>] [--ended-window-seconds <seconds>]`);
   console.log(``);
   console.log(`Notes:`);
   console.log(`  --public requires cloudflared (Cloudflare Tunnel) installed.`);
   console.log(`Examples:`);
   console.log(`  leak --file ./vape.jpg`);
   console.log(`  leak --file ./vape.jpg --price 0.01 --window 1h --confirmed`);
+  console.log(`  leak --file ./vape.jpg --access-mode download-code-only-no-payment --download-code "friends-only"`);
   console.log(`  leak --file ./vape.jpg --public --og-title "My New Drop" --og-description "Agent-assisted purchase"`);
   console.log(`  leak --file ./vape.jpg --public --public-confirm ${PUBLIC_CONFIRM_PHRASE}`);
   console.log(`  leak --file ./vape.jpg --public --og-image-url ./cover.png`);
@@ -69,6 +81,69 @@ function parseNonNegativeInt(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
   return Math.floor(n);
+}
+
+function readDownloadCodeFromStdin() {
+  let data = "";
+  try {
+    data = fs.readFileSync(0, "utf8");
+  } catch {
+    throw new Error("Failed to read download code from stdin");
+  }
+  const firstLine = String(data).split(/\r?\n/, 1)[0]?.trim() || "";
+  if (!firstLine) {
+    throw new Error("No download code received on stdin");
+  }
+  return firstLine;
+}
+
+async function resolveDownloadCodeHash({ args, configDefaults, accessMode }) {
+  const requiresDownloadCode = accessModeRequiresDownloadCode(accessMode);
+  const hasInlineCode = typeof args["download-code"] !== "undefined";
+  const useStdinCode = Boolean(args["download-code-stdin"]);
+
+  if (hasInlineCode && useStdinCode) {
+    throw new Error("Use exactly one download code input: --download-code or --download-code-stdin");
+  }
+
+  let inlineCode = "";
+  if (hasInlineCode) {
+    if (args["download-code"] === true) {
+      throw new Error("--download-code requires a value");
+    }
+    inlineCode = String(args["download-code"] || "").trim();
+    if (!inlineCode) throw new Error("--download-code cannot be empty");
+  }
+
+  let stdinCode = "";
+  if (useStdinCode) {
+    stdinCode = readDownloadCodeFromStdin();
+  }
+
+  const persistedHash = String(
+    process.env.DOWNLOAD_CODE_HASH || configDefaults.downloadCodeHash || "",
+  ).trim();
+
+  if (!requiresDownloadCode) {
+    if (inlineCode || stdinCode || persistedHash) {
+      throw new Error(
+        `ACCESS_MODE=${accessMode} does not accept download code input. Remove --download-code/--download-code-stdin and clear DOWNLOAD_CODE_HASH.`,
+      );
+    }
+    return "";
+  }
+
+  if (inlineCode) return hashDownloadCode(inlineCode);
+  if (stdinCode) return hashDownloadCode(stdinCode);
+  if (!persistedHash) {
+    throw new Error(
+      `ACCESS_MODE=${accessMode} requires a download code. Provide --download-code, --download-code-stdin, or DOWNLOAD_CODE_HASH.`,
+    );
+  }
+  if (!isValidDownloadCodeHash(persistedHash)) {
+    throw new Error("Invalid DOWNLOAD_CODE_HASH format");
+  }
+  return persistedHash;
 }
 
 function isAbsoluteHttpUrl(value) {
@@ -268,16 +343,20 @@ async function ensurePublicExposureConfirmed(args) {
   }
 }
 
-async function promptMissing({ price, windowSeconds }) {
+async function promptMissing({ price, windowSeconds, requiresPayment }) {
   const rl = readline.createInterface({ input, output });
   try {
-    let p = price;
-    if (!p) {
-      p = (await rl.question("How much (USDC)? e.g. 0.01 or $0.01: ")).trim();
+    let p = requiresPayment ? price : (price || "0");
+    if (requiresPayment) {
+      if (!p) {
+        p = (await rl.question("How much (USDC)? e.g. 0.01 or $0.01: ")).trim();
+      }
+      p = String(p).trim();
+      if (p.startsWith("$")) p = p.slice(1).trim();
+      if (!p || Number.isNaN(Number(p))) throw new Error("Invalid price");
+    } else {
+      p = "0";
     }
-    p = String(p).trim();
-    if (p.startsWith("$")) p = p.slice(1).trim();
-    if (!p || Number.isNaN(Number(p))) throw new Error("Invalid price");
 
     let w = windowSeconds;
     if (!w) {
@@ -320,12 +399,32 @@ async function main() {
     process.exit(1);
   }
 
+  const accessModeInput = String(
+    args["access-mode"] || process.env.ACCESS_MODE || configDefaults.accessMode || DEFAULT_ACCESS_MODE,
+  ).trim().toLowerCase();
+  if (!isValidAccessMode(accessModeInput)) {
+    console.error(`Invalid --access-mode value: ${accessModeInput}`);
+    console.error(`Supported access modes: ${ACCESS_MODE_VALUES.join(", ")}`);
+    process.exit(1);
+  }
+  const accessMode = accessModeInput;
+  const requiresPayment = accessModeRequiresPayment(accessMode);
+  const requiresDownloadCode = accessModeRequiresDownloadCode(accessMode);
+
+  let downloadCodeHash;
+  try {
+    downloadCodeHash = await resolveDownloadCodeHash({ args, configDefaults, accessMode });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
   const payTo = String(args["pay-to"] || process.env.SELLER_PAY_TO || configDefaults.sellerPayTo || "").trim();
-  if (!payTo) {
+  if (requiresPayment && !payTo) {
     console.error("Missing --pay-to, SELLER_PAY_TO in env, or sellerPayTo in ~/.leak/config.json");
     process.exit(1);
   }
-  if (!isAddress(payTo)) {
+  if (payTo && !isAddress(payTo)) {
     console.error(`Invalid seller payout address: ${payTo}`);
     console.error("Expected a valid Ethereum address (0x + 40 hex chars).");
     process.exit(1);
@@ -370,11 +469,17 @@ async function main() {
   const defaultEndedWindowSeconds = args.public ? 86400 : 0;
   const endedWindowSeconds = parseNonNegativeInt(endedWindowArg);
 
-  const price = args.price || process.env.PRICE_USD || configDefaults.priceUsd; // we keep env name for compatibility
+  const price = requiresPayment
+    ? (args.price || process.env.PRICE_USD || configDefaults.priceUsd)
+    : "0";
   const windowRaw = args.window || process.env.WINDOW_SECONDS || configDefaults.window;
   const windowSeconds = typeof windowRaw === "string" ? parseDurationToSeconds(windowRaw) : Number(windowRaw);
 
-  const prompted = await promptMissing({ price, windowSeconds: windowSeconds || null });
+  const prompted = await promptMissing({
+    price,
+    windowSeconds: windowSeconds || null,
+    requiresPayment,
+  });
 
   if (endedWindowArg !== undefined && endedWindowSeconds === null) {
     console.error("Invalid --ended-window-seconds (must be a non-negative integer)");
@@ -407,6 +512,8 @@ async function main() {
     PORT: String(port),
     SELLER_PAY_TO: payTo,
     PRICE_USD: String(prompted.price),
+    ACCESS_MODE: accessMode,
+    DOWNLOAD_CODE_HASH: downloadCodeHash,
     CHAIN_ID: String(network),
     FACILITATOR_MODE: facilitatorMode,
     FACILITATOR_URL: facilitatorUrl,
@@ -429,9 +536,19 @@ async function main() {
   console.log(`- file:   ${artifactPath}`);
   console.log(`- price:  ${prompted.price} USDC`);
   console.log(`- window: ${prompted.windowSeconds}s`);
-  console.log(`- to:     ${payTo}`);
+  console.log(`- access_mode: ${accessMode}`);
+  console.log(`- download_code: ${requiresDownloadCode ? "required" : "not required"}`);
+  if (requiresPayment) {
+    console.log(`- to:     ${payTo}`);
+  } else if (payTo) {
+    console.log(`- to:     ${payTo} (ignored: payment disabled by access mode)`);
+  }
   console.log(`- net:    ${network} (${networkName})`);
-  console.log(`- mode:   ${confirmationPolicy}`);
+  if (requiresPayment) {
+    console.log(`- settlement: ${confirmationPolicy}`);
+  } else {
+    console.log(`- settlement: n/a (payment disabled)`);
+  }
   console.log(`- facilitator_mode: ${facilitatorMode}`);
   console.log(`- facilitator_url:  ${facilitatorUrl}`);
   if (ogTitle) console.log(`- og_title: ${ogTitle}`);
@@ -443,8 +560,11 @@ async function main() {
   if (args.public) {
     const preflight = cloudflaredPreflight();
     if (!preflight.ok) {
-      const localOnlyCmd = `leak --file ${JSON.stringify(artifactPath)} --price ${prompted.price} --window ${prompted.windowSeconds}s --pay-to ${payTo} --network ${network}${confirmationPolicy === "confirmed" ? " --confirmed" : ""}${Number.isFinite(port) && port !== 4021 ? ` --port ${port}` : ""}${effectiveEndedWindowSeconds > 0 ? ` --ended-window-seconds ${effectiveEndedWindowSeconds}` : ""}`;
+      const localOnlyCmd = `leak --file ${JSON.stringify(artifactPath)} --access-mode ${accessMode} --price ${prompted.price} --window ${prompted.windowSeconds}s${requiresPayment ? ` --pay-to ${payTo}` : ""} --network ${network}${requiresPayment && confirmationPolicy === "confirmed" ? " --confirmed" : ""}${Number.isFinite(port) && port !== 4021 ? ` --port ${port}` : ""}${effectiveEndedWindowSeconds > 0 ? ` --ended-window-seconds ${effectiveEndedWindowSeconds}` : ""}`;
       printCloudflaredInstallHelp(localOnlyCmd);
+      if (requiresDownloadCode) {
+        console.error("[leak] Note: local mode still requires download-code input or DOWNLOAD_CODE_HASH.");
+      }
       if (!preflight.missing) {
         console.error(`[leak] detail: ${preflight.reason}`);
       }
