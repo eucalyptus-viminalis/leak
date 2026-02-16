@@ -12,23 +12,22 @@ import {
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
 import { DOWNLOAD_CODE_HEADER } from "../src/download_code.js";
+import { createUi } from "./ui.js";
 
 const SKILL_NAME = "leak-buy";
+const outUi = createUi(process.stdout);
+const errUi = createUi(process.stderr);
 
 function usageAndExit(code = 1) {
-  console.log(
-    "Usage: leak buy <promo_or_download_url> [--download-code <code> | --download-code-stdin] [--buyer-private-key-file <path> | --buyer-private-key-stdin] [--out <path> | --basename <name>]",
-  );
-  console.log("Examples:");
-  console.log(
-    "  leak buy https://xxxx.trycloudflare.com/ --buyer-private-key-file ./buyer.key",
-  );
-  console.log(
-    "  leak buy https://xxxx.trycloudflare.com/download --download-code friends-only --buyer-private-key-file ./buyer.key --basename myfile",
-  );
-  console.log(
-    `  printf '%s\\n' 'friends-only' | leak buy https://xxxx.trycloudflare.com/download --download-code-stdin --out ./downloads/file.bin`,
-  );
+  console.log(outUi.heading("Leak Buy CLI"));
+  console.log("");
+  console.log(outUi.section("Usage"));
+  console.log("  leak buy <promo_or_download_url> [--download-code <code> | --download-code-stdin] [--buyer-private-key-file <path> | --buyer-private-key-stdin] [--out <path> | --basename <name>]");
+  console.log("");
+  console.log(outUi.section("Examples"));
+  console.log("  leak buy https://xxxx.trycloudflare.com/ --buyer-private-key-file ./buyer.key");
+  console.log("  leak buy https://xxxx.trycloudflare.com/download --download-code friends-only --buyer-private-key-file ./buyer.key --basename myfile");
+  console.log("  printf '%s\\n' 'friends-only' | leak buy https://xxxx.trycloudflare.com/download --download-code-stdin --out ./downloads/file.bin");
   process.exit(code);
 }
 
@@ -309,7 +308,7 @@ async function saveBinaryResponse(response, args, suggestedFilename) {
   const buf = Buffer.from(await response.arrayBuffer());
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, buf);
-  console.log(`Saved ${buf.length} bytes -> ${outPath}`);
+  console.log(outUi.statusLine("ok", `Saved ${buf.length} bytes -> ${outPath}`));
 }
 
 async function finalizeDownloadResponse(response, { args, downloadUrl }) {
@@ -365,13 +364,24 @@ function maybePrintPaymentReceipt(response) {
   try {
     const receipt = decodePaymentResponseHeader(paymentResponseHeader);
     const explorer = explorerTxUrl(receipt.network, receipt.transaction);
-    console.log("Payment receipt:");
-    console.log(`- network: ${receipt.network}`);
-    if (receipt.payer) console.log(`- payer:   ${receipt.payer}`);
-    console.log(`- tx:      ${receipt.transaction}`);
-    if (explorer) console.log(`- explorer: ${explorer}`);
+    console.log("");
+    console.log(outUi.section("Payment Receipt"));
+    const rows = [
+      { key: "network", value: receipt.network },
+      receipt.payer ? { key: "payer", value: receipt.payer } : null,
+      { key: "tx", value: receipt.transaction },
+      explorer ? { key: "explorer", value: explorer } : null,
+    ];
+    for (const line of outUi.formatRows(rows)) {
+      console.log(line);
+    }
   } catch (err) {
-    console.error(`[buy] warning: could not decode PAYMENT-RESPONSE header (${err.message || String(err)})`);
+    console.error(
+      errUi.statusLine(
+        "warn",
+        `Could not decode PAYMENT-RESPONSE header (${err.message || String(err)})`,
+      ),
+    );
   }
 }
 
@@ -385,7 +395,7 @@ async function main() {
   const resolved = await resolveDownloadUrl(inputUrl);
   const downloadUrl = resolved.downloadUrl;
   if (downloadUrl !== inputUrl) {
-    console.log(`[buy] resolved purchase endpoint: ${downloadUrl}`);
+    console.log(outUi.statusLine("info", `Resolved purchase endpoint: ${downloadUrl}`));
   }
 
   const initialHeaders = {};
@@ -459,6 +469,7 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e);
+  const detail = e?.stack || e?.message || String(e);
+  console.error(errUi.statusLine("error", detail));
   process.exit(1);
 });

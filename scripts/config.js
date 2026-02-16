@@ -23,17 +23,38 @@ import {
   isValidAccessMode,
 } from "../src/access_mode.js";
 import { hashDownloadCode } from "../src/download_code.js";
+import { createUi } from "./ui.js";
 
 const ALLOWED_FACILITATOR_MODES = new Set(["testnet", "cdp_mainnet"]);
 const ALLOWED_CONFIRMATION_POLICIES = new Set(["confirmed", "optimistic"]);
+const outUi = createUi(output);
+const errUi = createUi(process.stderr);
+
+function logInfo(message) {
+  console.log(outUi.statusLine("info", message));
+}
+
+function logOk(message) {
+  console.log(outUi.statusLine("ok", message));
+}
+
+function logWarn(message) {
+  console.error(errUi.statusLine("warn", message));
+}
+
+function logError(message) {
+  console.error(errUi.statusLine("error", message));
+}
 
 function usageAndExit(code = 0) {
-  console.log("Usage:");
+  console.log(outUi.heading("Leak Config CLI"));
+  console.log("");
+  console.log(outUi.section("Usage"));
   console.log("  leak config");
   console.log("  leak config show");
   console.log("  leak config --write-env");
   console.log("");
-  console.log("Notes:");
+  console.log(outUi.section("Notes"));
   console.log("  - Stores defaults in ~/.leak/config.json");
   console.log("  - `--write-env` writes a project .env scaffold in the current directory");
   process.exit(code);
@@ -150,7 +171,7 @@ async function askDownloadCodeHash(rl, existingHash, accessMode) {
 
   let raw = (await rl.question("DOWNLOAD_CODE (input visible): ")).trim();
   while (!raw) {
-    console.error("DOWNLOAD_CODE is required for the selected ACCESS_MODE.");
+    logError("DOWNLOAD_CODE is required for the selected ACCESS_MODE.");
     raw = (await rl.question("DOWNLOAD_CODE (input visible): ")).trim();
   }
   return hashDownloadCode(raw);
@@ -159,16 +180,20 @@ async function askDownloadCodeHash(rl, existingHash, accessMode) {
 function printShow() {
   const loaded = readConfig();
   if (loaded.error) {
-    console.error(`[config] warning: ${loaded.error}`);
+    logWarn(loaded.error);
   }
   if (!loaded.exists) {
-    console.log(`No leak config found at ${loaded.path}`);
-    console.log("Run `leak config` to initialize your config file.");
+    logInfo(`No leak config found at ${loaded.path}`);
+    logInfo("Run `leak config` to initialize your config file.");
     return;
   }
 
   const redacted = redactConfig(loaded.config);
-  console.log(`Leak config path: ${loaded.path}`);
+  console.log(outUi.section("Leak Config"));
+  for (const line of outUi.formatRows([{ key: "path", value: loaded.path }])) {
+    console.log(line);
+  }
+  console.log("");
   console.log(JSON.stringify(redacted, null, 2));
 }
 
@@ -219,19 +244,19 @@ function buildEnvScaffold(defaults) {
 function maybeWriteEnvScaffold(defaults) {
   const envPath = path.resolve(process.cwd(), ".env");
   if (fs.existsSync(envPath)) {
-    console.log(`[config] ${envPath} already exists; skipping .env scaffold write.`);
+    logWarn(`${envPath} already exists; skipping .env scaffold write.`);
     return;
   }
 
   const body = buildEnvScaffold(defaults);
   fs.writeFileSync(envPath, body);
-  console.log(`[config] wrote ${envPath}`);
+  logOk(`Wrote ${envPath}`);
 }
 
 async function runWizard({ writeEnv }) {
   const loaded = readConfig();
   if (loaded.error) {
-    console.error(`[config] warning: ${loaded.error}`);
+    logWarn(loaded.error);
   }
 
   const existing = loaded.config.defaults || {};
@@ -245,7 +270,7 @@ async function runWizard({ writeEnv }) {
     );
     sellerPayTo = String(sellerPayTo || "").trim();
     while (sellerPayTo && !isAddress(sellerPayTo)) {
-      console.error("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
+      logError("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
       sellerPayTo = String(
         await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", sellerPayTo),
       ).trim();
@@ -262,7 +287,7 @@ async function runWizard({ writeEnv }) {
         chainId = resolveSupportedChain(chainIdInput).caip2;
         break;
       } catch (err) {
-        console.error(err.message || String(err));
+        logError(err.message || String(err));
         chainIdInput = await askWithDefault(rl, "CHAIN_ID", chainIdInput || "eip155:84532");
       }
     }
@@ -274,7 +299,7 @@ async function runWizard({ writeEnv }) {
     );
     facilitatorMode = facilitatorMode.toLowerCase();
     while (!ALLOWED_FACILITATOR_MODES.has(facilitatorMode)) {
-      console.error("Invalid FACILITATOR_MODE. Use: testnet or cdp_mainnet");
+      logError("Invalid FACILITATOR_MODE. Use: testnet or cdp_mainnet");
       facilitatorMode = (await askWithDefault(rl, "FACILITATOR_MODE", "testnet")).toLowerCase();
     }
 
@@ -298,7 +323,7 @@ async function runWizard({ writeEnv }) {
         existing.cdpApiKeyId || "",
       );
       while (!cdpApiKeyId) {
-        console.error("CDP_API_KEY_ID is required when FACILITATOR_MODE=cdp_mainnet");
+        logError("CDP_API_KEY_ID is required when FACILITATOR_MODE=cdp_mainnet");
         cdpApiKeyId = await askWithDefault(rl, "CDP_API_KEY_ID", "");
       }
 
@@ -308,7 +333,7 @@ async function runWizard({ writeEnv }) {
         existing.cdpApiKeySecret || "",
       );
       while (!cdpApiKeySecret) {
-        console.error("CDP_API_KEY_SECRET is required when FACILITATOR_MODE=cdp_mainnet");
+        logError("CDP_API_KEY_SECRET is required when FACILITATOR_MODE=cdp_mainnet");
         cdpApiKeySecret = await askWithDefault(rl, "CDP_API_KEY_SECRET", "");
       }
     }
@@ -320,7 +345,7 @@ async function runWizard({ writeEnv }) {
     );
     confirmationPolicy = confirmationPolicy.toLowerCase();
     while (!ALLOWED_CONFIRMATION_POLICIES.has(confirmationPolicy)) {
-      console.error("Invalid CONFIRMATION_POLICY. Use: confirmed or optimistic");
+      logError("Invalid CONFIRMATION_POLICY. Use: confirmed or optimistic");
       confirmationPolicy = (
         await askWithDefault(rl, "CONFIRMATION_POLICY", "confirmed")
       ).toLowerCase();
@@ -333,7 +358,7 @@ async function runWizard({ writeEnv }) {
     );
     accessMode = accessMode.toLowerCase();
     while (!isValidAccessMode(accessMode)) {
-      console.error(`Invalid ACCESS_MODE. Use one of: ${ACCESS_MODE_VALUES.join(", ")}`);
+      logError(`Invalid ACCESS_MODE. Use one of: ${ACCESS_MODE_VALUES.join(", ")}`);
       accessMode = (
         await askWithDefault(
           rl,
@@ -345,13 +370,13 @@ async function runWizard({ writeEnv }) {
 
     if (accessModeRequiresPayment(accessMode)) {
       while (!sellerPayTo) {
-        console.error("SELLER_PAY_TO is required for payment access modes.");
+        logError("SELLER_PAY_TO is required for payment access modes.");
         sellerPayTo = String(
           await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", ""),
         ).trim();
       }
       while (!isAddress(sellerPayTo)) {
-        console.error("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
+        logError("Invalid SELLER_PAY_TO. Expected a valid Ethereum address (0x + 40 hex chars).");
         sellerPayTo = String(
           await askWithDefault(rl, "SELLER_PAY_TO (seller payout address)", sellerPayTo),
         ).trim();
@@ -382,7 +407,7 @@ async function runWizard({ writeEnv }) {
     );
     let port = parsePositiveInt(portRaw);
     while (port === null) {
-      console.error("PORT must be a positive integer");
+      logError("PORT must be a positive integer");
       portRaw = await askWithDefault(rl, "PORT", "4021");
       port = parsePositiveInt(portRaw);
     }
@@ -394,7 +419,7 @@ async function runWizard({ writeEnv }) {
     );
     let endedWindowSeconds = parseNonNegativeInt(endedWindowRaw);
     while (endedWindowSeconds === null) {
-      console.error("ENDED_WINDOW_SECONDS must be a non-negative integer");
+      logError("ENDED_WINDOW_SECONDS must be a non-negative integer");
       endedWindowRaw = await askWithDefault(rl, "ENDED_WINDOW_SECONDS", "0");
       endedWindowSeconds = parseNonNegativeInt(endedWindowRaw);
     }
@@ -421,7 +446,8 @@ async function runWizard({ writeEnv }) {
     };
 
     const written = writeConfig({ version: 1, defaults });
-    console.log(`[config] saved ${written.path}`);
+    logOk(`Saved ${written.path}`);
+    console.log("");
     console.log(JSON.stringify(redactConfig(written.config), null, 2));
 
     if (writeEnv) {
@@ -449,6 +475,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  const detail = err?.stack || err?.message || String(err);
+  logError(detail);
   process.exit(1);
 });

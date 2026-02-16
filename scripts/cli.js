@@ -3,10 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { createUi } from "./ui.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PACKAGE_JSON_PATH = path.resolve(__dirname, "..", "package.json");
+const outUi = createUi(process.stdout);
+const errUi = createUi(process.stderr);
 
 const sub = process.argv[2];
 
@@ -21,32 +24,33 @@ function readVersion() {
 }
 
 function printVersion() {
-  console.log(`leak-cli ${readVersion()}`);
+  console.log(outUi.section(`leak-cli ${readVersion()}`));
 }
 
 function printHelp() {
-  console.log("Leak CLI");
+  console.log(outUi.heading("Leak CLI"));
+  console.log(outUi.muted(`version ${readVersion()}`));
   console.log("");
-  console.log("Usage:");
+  console.log(outUi.section("Usage"));
   console.log("  leak publish [prefill flags]");
   console.log("  leak --file <path> [publish flags]");
   console.log("  leak buy <promo_or_download_url> [buy flags]");
   console.log("  leak config [show|--write-env]");
   console.log("  leak version");
   console.log("");
-  console.log("Publish Flags:");
+  console.log(outUi.section("Publish Flags"));
   console.log("  --access-mode <mode>");
   console.log("  --download-code <code> | --download-code-stdin");
   console.log("  --price <usdc> --window <duration>");
   console.log("  --pay-to <address> --network <caip2> --port <port>");
   console.log("  --confirmed --public --og-title --og-description --og-image-url");
   console.log("");
-  console.log("Buy Flags:");
+  console.log(outUi.section("Buy Flags"));
   console.log("  --download-code <code> | --download-code-stdin");
   console.log("  --buyer-private-key-file <path> | --buyer-private-key-stdin");
   console.log("  --out <path> | --basename <name>");
   console.log("");
-  console.log("Examples:");
+  console.log(outUi.section("Examples"));
   console.log("  leak publish");
   console.log("  leak publish --file ./song.mp3 --access-mode download-code-only-no-payment");
   console.log("  leak --file ./song.mp3 --access-mode payment-only-no-download-code");
@@ -55,10 +59,11 @@ function printHelp() {
   console.log("  leak config");
   console.log("  leak version");
   console.log("");
-  console.log("Notes:");
+  console.log(outUi.section("Notes"));
   console.log("  share / as promo (social card); buy can start from / or /download.");
   console.log("  buyer private key is required only when seller access mode includes payment.");
-  console.log("Backward-compatible:");
+  console.log("");
+  console.log(outUi.section("Backward-compatible"));
   console.log("  leak leak --file <path> ...");
 }
 
@@ -69,13 +74,13 @@ function runSubcommand(scriptName, argv) {
   });
 
   child.on("error", (err) => {
-    console.error(`Failed to launch ${scriptName}: ${err.message}`);
+    console.error(errUi.statusLine("error", `Failed to launch ${scriptName}: ${err.message}`));
     process.exit(1);
   });
 
   child.on("exit", (code, signal) => {
     if (signal) {
-      console.error(`${scriptName} exited via signal ${signal}`);
+      console.error(errUi.statusLine("error", `${scriptName} exited via signal ${signal}`));
       process.exit(1);
     }
     process.exit(code ?? 1);

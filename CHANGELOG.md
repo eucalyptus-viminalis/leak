@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `FILE_PATH` prompt now supports Tab autocomplete for local paths
   - `~` home-directory paths now resolve correctly (for example `~/Downloads/file.txt`)
   - fixed post-access-mode prompt stability so PRICE/WINDOW/payment prompts do not exit early
+- Polished CLI output presentation across `leak`, `leak publish`, `leak buy`, and `leak config`:
+  - added consistent section spacing and key/value summary layouts
+  - added subtle ANSI styling for interactive terminals
+  - added ASCII status labels (`[info]`, `[ok]`, `[warn]`, `[error]`)
+  - honors `NO_COLOR=1` and disables color in non-TTY contexts
+  - publish output now emits clickable terminal hyperlinks for public/promo/buy URLs when supported
 
 ## [2026.2.17-beta.1]
 
