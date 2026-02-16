@@ -64,6 +64,24 @@ Activate when user asks to publish/release/sell/leak a file.
 4. Seller payout address (`--pay-to`).
 5. Whether to expose publicly (`--public`).
 
+### Runtime policy (required)
+1. Treat publish as persistent-by-default for all sale windows because agent sessions/process trees may be cleaned up early.
+2. Use `bash skills/leak/scripts/publish.sh` default mode (`--run-mode auto`) unless the user explicitly requests foreground execution.
+3. `--run-mode auto` must select a detached supervisor in this order: `systemd --user` (Linux), `launchd` (macOS), `tmux`, `screen`, then `nohup` fallback.
+4. If the user explicitly requests background mode, pass `--run-mode background`.
+5. If the user explicitly requests foreground mode, pass `--run-mode foreground`.
+6. After background launch, always report control details (supervisor/session or PID, log file, and stop command).
+7. Never assume the interactive agent session will stay alive long enough to host the server.
+
+### Runtime smoke check
+Before first publish on a new host, validate detached execution:
+
+```bash
+bash skills/leak/scripts/smoke_persistent_runner.sh --mode auto --sleep-seconds 8
+```
+
+Expected result: `PASS` plus the selected backend.
+
 ### Guardrails enforced by CLI
 1. Reject directories and symlinks.
 2. Block sensitive paths by default (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `/etc`, `/proc`, `/sys`, `/var/run/secrets`).
@@ -80,10 +98,23 @@ bash skills/leak/scripts/publish.sh \
   --network eip155:84532
 ```
 
+### Persistent local publish (default)
+
+```bash
+bash skills/leak/scripts/publish.sh \
+  --run-mode auto \
+  --file ./protected/asset.bin \
+  --price 0.01 \
+  --window 15m \
+  --pay-to 0xSELLER_ADDRESS \
+  --network eip155:84532
+```
+
 ### Public publish
 
 ```bash
 bash skills/leak/scripts/publish.sh \
+  --run-mode auto \
   --file ./protected/asset.bin \
   --price 0.01 \
   --window 15m \
@@ -94,6 +125,7 @@ bash skills/leak/scripts/publish.sh \
 The tool prints:
 - `PROMO LINK: https://.../`
 - `BUY LINK: https://.../download`
+- In background mode, read the reported log file to obtain these links.
 
 Share the promo link (`/`) in social posts.
 
