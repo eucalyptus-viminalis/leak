@@ -2,7 +2,7 @@
 name: leak
 description: Sell or buy x402-gated digital content using the leak CLI tool. On the seller side, use this skill when the user wants to publish, release, or "leak" a file and wants to charge a price. On the buyer side, use this when the user wants to download a file that requires payment.
 compatibility: Requires access to the internet
-version: 2026.2.15
+version: 2026.2.16
 metadata:
   openclaw:
     emoji: 💦

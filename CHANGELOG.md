@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.2.16]
+
 ### Changed
 
 - Improved social card reliability for promo links (including Farcaster/Warpcast):
@@ -15,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - promo route (`GET /`) now returns `200` even after sale end so crawlers can still build previews
 - Added `HEAD` support for OG image endpoints (`/og.png`, `/og.svg`, `/og-image`) to improve crawler compatibility.
 - Updated README route and troubleshooting docs for OG preview behavior, including cache-busting guidance for refreshed link cards.
+- Updated unpaid browser handling for `GET /download` (`402`) to render leak’s custom guidance page while preserving x402 protocol headers (`PAYMENT-REQUIRED`) and existing API behavior.
+- Unified promo and guidance-page body content by sharing the same details block (price/network/sale-end, Agent Quick Path, human action copy-link, and install note), keeping `/` and unpaid `/download` views in sync.
 
 ## [2026.2.15]
 

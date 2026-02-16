@@ -90,6 +90,11 @@ npm version <stable-version> --no-git-tag-version
 - Move release notes into `CHANGELOG.md` section for `<stable-version>`.
 - Run required gates with `RELEASE_VERSION=<stable-version>`.
 
+```bash
+RELEASE_VERSION=<stable-version> npm run check:changelog-version
+npm run check:release
+```
+
 ### 3) Commit + tag + push
 
 ```bash
