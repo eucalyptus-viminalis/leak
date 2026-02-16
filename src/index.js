@@ -115,11 +115,11 @@ const OG_IMAGE_PATH = OG_IMAGE_PATH_RAW
 const OG_IMAGE_CACHE_CONTROL = "public, max-age=60";
 const OG_IMAGE_WIDTH = 1200;
 const OG_IMAGE_HEIGHT = 630;
-const SKILL_NAME = "leak";
+const SKILL_NAME = "leak-buy";
 const SKILL_DESCRIPTION =
-  "Sell or buy x402-gated digital content using the leak CLI tool";
+  "Buy and download x402-gated leak content from promo or download links using the leak CLI tool";
 const SKILL_SOURCE = "clawhub";
-const SKILL_INSTALL_COMMAND = "clawhub install leak";
+const SKILL_INSTALL_COMMAND = "clawhub install leak-buy";
 const WELL_KNOWN_CACHE_CONTROL = "public, max-age=60";
 const LEGACY_DISCOVERY_DEPRECATION =
   "Deprecated endpoint; use /.well-known/skills/index.json for RFC-compatible discovery.";
@@ -466,14 +466,12 @@ function buildAgentQuickPath(promoUrl, downloadUrl) {
   const safeDownloadUrl = String(downloadUrl || "").trim();
   const buyTarget =
     safePromoUrl || safeDownloadUrl || "<promo_or_download_url>";
-  const buyScriptCommand = `bash skills/leak/scripts/buy.sh "${buyTarget}" --buyer-private-key-file <buyer_key_file_path>`;
 
   return {
     promoUrl: safePromoUrl,
     downloadUrl: safeDownloadUrl,
     installCommand: SKILL_INSTALL_COMMAND,
     buyTarget,
-    buyScriptCommand,
   };
 }
 
@@ -529,6 +527,7 @@ function renderPromoSharedContent({ promoUrl, downloadUrl, saleEndTs }) {
       Want to know more about <code>leak</code>? Visit
       <a href="https://github.com/eucalyptus-viminalis/leak">github.com/eucalyptus-viminalis/leak</a>
       or search for leak on clawhub.
+      Want to publish your own content? Install the <code>leak-publish</code> skill.
     </p>
   `;
 }
@@ -1081,7 +1080,7 @@ app.get("/.well-known/leak", (req, res) => {
         install_command: SKILL_INSTALL_COMMAND,
       },
       message:
-        "This leak has expired, but you can install the leak skill for future purchases",
+        "This leak has expired, but you can install the leak-buy skill for future purchases",
       deprecation: LEGACY_DISCOVERY_DEPRECATION,
       discovery_index_url: discoveryPath,
       rfc_resource_url: rfcResourcePath,
